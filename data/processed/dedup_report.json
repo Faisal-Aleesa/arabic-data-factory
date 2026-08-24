@@ -1,0 +1,180 @@
+{
+  "config": {
+    "exact_method": "sha256 of whitespace-collapsed cleaned_text",
+    "near_method": "MinHash+LSH, word 5-shingles, num_perm=128",
+    "jaccard_threshold": 0.8,
+    "near_duplicate_policy": "flag only, never auto-remove"
+  },
+  "documents_scanned": 20,
+  "exact_duplicate_groups": [],
+  "exact_duplicates_removed": 0,
+  "exact_duplicate_map": {},
+  "near_duplicate_candidate_pairs": 0,
+  "near_duplicate_pairs": [],
+  "near_duplicates_flagged": [],
+  "documents_kept": [
+    "26931350",
+    "28158282",
+    "31951509",
+    "47908694",
+    "49613641",
+    "17271461",
+    "17468173",
+    "27060507",
+    "72597415",
+    "95147413",
+    "14705258",
+    "31484293",
+    "35152952",
+    "60373848",
+    "69316182",
+    "15393758",
+    "28471509",
+    "51493058",
+    "81848130",
+    "90820505"
+  ],
+  "documents_kept_count": 20,
+  "per_document": [
+    {
+      "doc_id": "26931350",
+      "domain": "administrative",
+      "sha256": "61fc66034de4eed21375ca15c9dbaf0b386f1d183dd0567e19f34e471b385aca",
+      "shingle_count": 46914,
+      "status": "unique"
+    },
+    {
+      "doc_id": "28158282",
+      "domain": "administrative",
+      "sha256": "2830a1fa951d89899e8b558a4e8e87b86ea037f64885007acda7eca3e819ff33",
+      "shingle_count": 41371,
+      "status": "unique"
+    },
+    {
+      "doc_id": "31951509",
+      "domain": "administrative",
+      "sha256": "f27ba0433b40b3bd1e715de573e9b4f5d4190f2a1f28ca20ac99298d2b503e4b",
+      "shingle_count": 25122,
+      "status": "unique"
+    },
+    {
+      "doc_id": "47908694",
+      "domain": "administrative",
+      "sha256": "82747539ca295590e01d25ccb57e8d6caaed9fddf9260c14775c1900f2901937",
+      "shingle_count": 18251,
+      "status": "unique"
+    },
+    {
+      "doc_id": "49613641",
+      "domain": "administrative",
+      "sha256": "ba630a1732451ddf179d9634371f508a3077910a84171afb5fd1bc79a230bc93",
+      "shingle_count": 45389,
+      "status": "unique"
+    },
+    {
+      "doc_id": "17271461",
+      "domain": "educational",
+      "sha256": "bbb3f0f473bd2a71a070c006f5fe31801758895c2c330db6ae02f8830141409d",
+      "shingle_count": 14131,
+      "status": "unique"
+    },
+    {
+      "doc_id": "17468173",
+      "domain": "educational",
+      "sha256": "84a6ae8237f366aae02d33778baa9c7a926dc5a36ea3ad196ed208769c170e13",
+      "shingle_count": 4059,
+      "status": "unique"
+    },
+    {
+      "doc_id": "27060507",
+      "domain": "educational",
+      "sha256": "7ec119d874f130b65b987e9fba5b284387b039e2d5d7a3a8b04f700e14885a73",
+      "shingle_count": 2806,
+      "status": "unique"
+    },
+    {
+      "doc_id": "72597415",
+      "domain": "educational",
+      "sha256": "b137503c1b7569049801328bd09b9bc0bab88f16d6803a8efce71c232d5fcec8",
+      "shingle_count": 53369,
+      "status": "unique"
+    },
+    {
+      "doc_id": "95147413",
+      "domain": "educational",
+      "sha256": "8e4cfcb81e4f506d3849a1ed071c13105ed343606e1687b1e235e8004de4004e",
+      "shingle_count": 2070,
+      "status": "unique"
+    },
+    {
+      "doc_id": "14705258",
+      "domain": "general_knowledge",
+      "sha256": "8efd7cf60d582886d0db2788e6c69c416989ab3c8f634d80f78dbbdcf822bac4",
+      "shingle_count": 9551,
+      "status": "unique"
+    },
+    {
+      "doc_id": "31484293",
+      "domain": "general_knowledge",
+      "sha256": "61cc5457cd4b7a5af6f4e86adf0008e82b28b191e2cd72ae281067d086647002",
+      "shingle_count": 87970,
+      "status": "unique"
+    },
+    {
+      "doc_id": "35152952",
+      "domain": "general_knowledge",
+      "sha256": "91a27136efcfe07a12b0742795dee9f6b785176d6c35b15d995a8b9d80c245f3",
+      "shingle_count": 3995,
+      "status": "unique"
+    },
+    {
+      "doc_id": "60373848",
+      "domain": "general_knowledge",
+      "sha256": "80cc62ee00a6a6e05793888a636b6143b2371477c017a1c46a8b35a6221b9796",
+      "shingle_count": 12541,
+      "status": "unique"
+    },
+    {
+      "doc_id": "69316182",
+      "domain": "general_knowledge",
+      "sha256": "7334131d4cf514221e3b3376496fe64b7ed229e20b92c81dffeb2fcf55368271",
+      "shingle_count": 28801,
+      "status": "unique"
+    },
+    {
+      "doc_id": "15393758",
+      "domain": "science_tech",
+      "sha256": "fd767e078202883f78df8f497536af229b841a7d6cfc914b51ab31b2a792f313",
+      "shingle_count": 15141,
+      "status": "unique"
+    },
+    {
+      "doc_id": "28471509",
+      "domain": "science_tech",
+      "sha256": "b871093b123660f53eb01b8c80ba183d696a03887e3b4f486711f4d7ff9c6f6f",
+      "shingle_count": 38697,
+      "status": "unique"
+    },
+    {
+      "doc_id": "51493058",
+      "domain": "science_tech",
+      "sha256": "868ed306278a19bc1172bdac1e33ae543ce85c9d80e54be4736bea2c94e01d85",
+      "shingle_count": 25661,
+      "status": "unique"
+    },
+    {
+      "doc_id": "81848130",
+      "domain": "science_tech",
+      "sha256": "5505afbe61421179dcdfbd1594c7a46ae61cfe035789a65024a29721c32bb774",
+      "shingle_count": 12107,
+      "status": "unique"
+    },
+    {
+      "doc_id": "90820505",
+      "domain": "science_tech",
+      "sha256": "a190c98ef2acd0ce6a59a6676ae8a92158c2024526ec6c3c33713a263abf8810",
+      "shingle_count": 38428,
+      "status": "unique"
+    }
+  ]
+}

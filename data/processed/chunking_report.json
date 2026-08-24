@@ -1,0 +1,181 @@
+{
+  "config": {
+    "target_min_tokens": 200,
+    "target_max_tokens": 800,
+    "token_count_method": "whitespace_word_count (word-based approximation)",
+    "boundary_rule": "paragraph boundaries only; separator '\\n\\n' from Stage 1",
+    "oversize_policy": "kept whole and flagged, never split mid-paragraph",
+    "text_variant": "original"
+  },
+  "documents_chunked": 20,
+  "documents_skipped": [],
+  "total_chunks": 712,
+  "total_tokens": 528559,
+  "chunk_flag_counts": {
+    "below_target_min": 3,
+    "oversize_paragraph": 1
+  },
+  "per_document": [
+    {
+      "doc_id": "26931350",
+      "domain": "administrative",
+      "title": "عمرو بن العاص",
+      "paragraphs": 933,
+      "chunks": 64,
+      "tokens": 47124
+    },
+    {
+      "doc_id": "28158282",
+      "domain": "administrative",
+      "title": "مذكرات لينين : عن الحروب الأوروبية ماضيها وحاضرها",
+      "paragraphs": 787,
+      "chunks": 55,
+      "tokens": 41457
+    },
+    {
+      "doc_id": "31951509",
+      "domain": "administrative",
+      "title": "الشرق والغرب",
+      "paragraphs": 464,
+      "chunks": 35,
+      "tokens": 25138
+    },
+    {
+      "doc_id": "47908694",
+      "domain": "administrative",
+      "title": "المذكرات الجغرافية في الأقطار السورية",
+      "paragraphs": 250,
+      "chunks": 25,
+      "tokens": 18260
+    },
+    {
+      "doc_id": "49613641",
+      "domain": "administrative",
+      "title": "شاعر أندلسي وجائزة عالمية",
+      "paragraphs": 1165,
+      "chunks": 61,
+      "tokens": 45475
+    },
+    {
+      "doc_id": "17271461",
+      "domain": "educational",
+      "title": "آخر رجال الموهيكان",
+      "paragraphs": 739,
+      "chunks": 19,
+      "tokens": 14147
+    },
+    {
+      "doc_id": "17468173",
+      "domain": "educational",
+      "title": "القَصرُ الهِندِي",
+      "paragraphs": 168,
+      "chunks": 6,
+      "tokens": 4125
+    },
+    {
+      "doc_id": "27060507",
+      "domain": "educational",
+      "title": "شبـكة الـموت",
+      "paragraphs": 148,
+      "chunks": 4,
+      "tokens": 2810
+    },
+    {
+      "doc_id": "72597415",
+      "domain": "educational",
+      "title": "الرياح وأشجار الصفصاف",
+      "paragraphs": 1056,
+      "chunks": 71,
+      "tokens": 53399
+    },
+    {
+      "doc_id": "95147413",
+      "domain": "educational",
+      "title": "السَّعيدُ حَسَن",
+      "paragraphs": 125,
+      "chunks": 3,
+      "tokens": 2074
+    },
+    {
+      "doc_id": "14705258",
+      "domain": "general_knowledge",
+      "title": "السيد زخاريوس",
+      "paragraphs": 327,
+      "chunks": 13,
+      "tokens": 9557
+    },
+    {
+      "doc_id": "31484293",
+      "domain": "general_knowledge",
+      "title": "نقض كتاب «في الشعر الجاهلي»",
+      "paragraphs": 2244,
+      "chunks": 118,
+      "tokens": 89230
+    },
+    {
+      "doc_id": "35152952",
+      "domain": "general_knowledge",
+      "title": "مستعذبو الألم",
+      "paragraphs": 87,
+      "chunks": 6,
+      "tokens": 3999
+    },
+    {
+      "doc_id": "60373848",
+      "domain": "general_knowledge",
+      "title": "نزوات ماريان: وليالي أكتوبر ومايو وأغسطس",
+      "paragraphs": 527,
+      "chunks": 17,
+      "tokens": 12562
+    },
+    {
+      "doc_id": "69316182",
+      "domain": "general_knowledge",
+      "title": "فلسفة الوجود",
+      "paragraphs": 709,
+      "chunks": 39,
+      "tokens": 28832
+    },
+    {
+      "doc_id": "15393758",
+      "domain": "science_tech",
+      "title": "جيوبنا وجيوب الأجانب",
+      "paragraphs": 312,
+      "chunks": 20,
+      "tokens": 15155
+    },
+    {
+      "doc_id": "28471509",
+      "domain": "science_tech",
+      "title": "مطالعات علمية",
+      "paragraphs": 501,
+      "chunks": 57,
+      "tokens": 38826
+    },
+    {
+      "doc_id": "51493058",
+      "domain": "science_tech",
+      "title": "دراسات سيكلوجية",
+      "paragraphs": 827,
+      "chunks": 33,
+      "tokens": 25684
+    },
+    {
+      "doc_id": "81848130",
+      "domain": "science_tech",
+      "title": "التاريخ يفسر التضخم والتقلص",
+      "paragraphs": 212,
+      "chunks": 16,
+      "tokens": 12139
+    },
+    {
+      "doc_id": "90820505",
+      "domain": "science_tech",
+      "title": "تاريخ العقاقير والعلاج",
+      "paragraphs": 1327,
+      "chunks": 50,
+      "tokens": 38566
+    }
+  ],
+  "output": "data/processed/chunks.jsonl"
+}

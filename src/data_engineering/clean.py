@@ -1,0 +1,356 @@
+"""Stage 1 - Cleaning.
+
+Deterministic cleaning of the acquired Hindawi books. No LLM calls anywhere.
+
+Input : data/interim/<domain>/<doc_id>.json          (from download_hindawi_corpus.py)
+Output: data/interim/<domain>/<doc_id>_cleaned.json  (originals are never overwritten)
+        data/processed/cleaning_report.json          (per-doc stats + review flags)
+
+Pipeline per document
+  1. ftfy encoding repair on raw_text (no-op for this EPUB batch, needed for later PDFs).
+  2. Split into paragraphs on the blank-line separator used by the corpus ("\\n\\n").
+  3. Detach the front-matter header block (title / تأليف / ترجمة / مراجعة ...) and keep
+     it as structured metadata instead of throwing it away.
+  4. Arabic normalization (pyarabic): alef variants, ya/alef-maksura, tatweel,
+     whitespace. Diacritic stripping is a flag, default OFF. Both the normalized text
+     (`paragraphs`) and the orthography-preserving text (`paragraphs_original`) are
+     written, since alef/ya folding is lossy and better suited to matching than to
+     generative training text.
+  5. Track a before/after character delta and flag anything that lost >30% of its
+     characters, plus a few other review signals. Nothing is ever dropped silently.
+     The delta is measured against the orthography-preserving text (+ the detached
+     header), i.e. what actually ships downstream in chunks.jsonl; the folded body
+     length is reported separately as `char_count_folded_body`.
+"""
+
+from __future__ import annotations
+
+import argparse
+import glob
+import json
+import os
+import re
+import unicodedata
+
+import ftfy
+from pyarabic import araby
+
+# --- Paths -------------------------------------------------------------------
+INTERIM_DIR = "data/interim"
+REPORT_PATH = "data/processed/cleaning_report.json"
+
+# --- Cleaning parameters -----------------------------------------------------
+PARAGRAPH_SEPARATOR = "\n\n"      # verified against all 20 pilot books
+CHAR_LOSS_FLAG_THRESHOLD = 0.30   # flag doc for manual review above this loss
+MAX_HEADER_PARAGRAPHS = 12        # safety cap so we never eat real prose
+
+# Front-matter role markers used by Hindawi e-books. The marker sits on its own
+# line, the name(s) follow on the next line(s) inside the same paragraph.
+ROLE_MARKERS = {
+    "تأليف": "author_stated",
+    "ترجمة": "translator",
+    "مراجعة": "reviewer",
+    "تحرير": "editor",
+    "إعداد": "compiler",
+    "تقديم": "introduction_by",
+    "جمع": "compiler",
+    "شرح": "annotator",
+}
+
+# Paragraphs that are pure media placeholders with no textual content.
+MEDIA_PLACEHOLDER_RE = re.compile(r"^\s*\[\s*(figure|image|figcaption)?\s*\]\s*$", re.IGNORECASE)
+
+# Arabic letter normalization tables (explicit, so the transform is auditable).
+ALEF_VARIANTS = {
+    "آ": araby.ALEF,  # آ  alef with madda
+    "أ": araby.ALEF,  # أ  alef with hamza above
+    "إ": araby.ALEF,  # إ  alef with hamza below
+    "ٱ": araby.ALEF,  # ٱ  alef wasla
+    "ٲ": araby.ALEF,  # ٲ
+    "ٳ": araby.ALEF,  # ٳ
+}
+YA_VARIANTS = {
+    "ى": araby.YEH,  # ى  alef maksura -> ya
+    "ی": araby.YEH,  # ی  farsi ya
+}
+NORMALIZE_TABLE = str.maketrans({**ALEF_VARIANTS, **YA_VARIANTS})
+
+
+# --- Text helpers ------------------------------------------------------------
+def normalize_whitespace(text: str) -> str:
+    """NBSP/zero-width cleanup, collapse runs of spaces, keep newlines meaningful."""
+    text = text.replace(" ", " ")                    # NBSP
+    text = re.sub(r"[​-‏‪-‮﻿]", "", text)  # zero-width / bidi marks
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r" *\n *", "\n", text)
+    return text.strip()
+
+
+def normalize_arabic(text: str, strip_diacritics: bool = False) -> str:
+    """Alef variants, ya/alef-maksura, tatweel, optional diacritics."""
+    text = unicodedata.normalize("NFC", text)
+    text = araby.strip_tatweel(text)
+    text = text.translate(NORMALIZE_TABLE)
+    if strip_diacritics:
+        text = araby.strip_tashkeel(text)
+    return text
+
+
+def word_count(text: str) -> int:
+    return len(text.split())
+
+
+# --- Header (front-matter) extraction ----------------------------------------
+def _titles_match(paragraph: str, title: str) -> bool:
+    """Loose comparison so a diacritized/normalized repeat of the title still matches."""
+    def key(s: str) -> str:
+        s = araby.strip_tashkeel(araby.strip_tatweel(s))
+        s = s.translate(NORMALIZE_TABLE)
+        s = re.sub(r"[^\w\s]", " ", s)
+        return " ".join(s.split())
+
+    p, t = key(paragraph), key(title)
+    if not p:
+        return False
+    # the corpus title sometimes carries a " : subtitle" tail
+    return p == t or p in t or t.startswith(p)
+
+
+def extract_header(paragraphs: list[str], title: str) -> tuple[dict, list[str], list[str]]:
+    """Split leading front matter off the body.
+
+    Returns (roles, header_paragraphs, body_paragraphs). A paragraph belongs to the
+    header if it is a role block (تأليف/ترجمة/...), a repeat of the book title, or a
+    short line appearing before the first role block (subtitle). Scanning stops at the
+    first paragraph that fails all three tests.
+    """
+    roles: dict[str, list[str]] = {}
+    header: list[str] = []
+    seen_role = False
+    idx = 0
+
+    for idx, para in enumerate(paragraphs):
+        if idx >= MAX_HEADER_PARAGRAPHS:
+            break
+        lines = [ln.strip() for ln in para.split("\n") if ln.strip()]
+        if not lines:
+            header.append(para)
+            continue
+
+        marker = lines[0].strip(" :：")
+        if marker in ROLE_MARKERS and len(lines) > 1:
+            field = ROLE_MARKERS[marker]
+            roles.setdefault(field, []).extend(lines[1:])
+            header.append(para)
+            seen_role = True
+            continue
+
+        if _titles_match(para, title):
+            header.append(para)
+            continue
+
+        # subtitle line before any role block (e.g. "عن الحروب الأوروبية ماضيها وحاضرها")
+        if not seen_role and len(para) <= 120 and "\n" not in para:
+            header.append(para)
+            continue
+
+        break
+    else:
+        idx = len(paragraphs)
+
+    if not seen_role:
+        # No authorship block found -> be conservative, only strip leading title repeats.
+        header, idx = [], 0
+        for i, para in enumerate(paragraphs[:MAX_HEADER_PARAGRAPHS]):
+            if _titles_match(para, title):
+                header.append(para)
+                idx = i + 1
+            else:
+                break
+
+    flat = {k: " / ".join(v) for k, v in roles.items()}
+    return flat, header, paragraphs[idx:]
+
+
+# --- Per-document cleaning ---------------------------------------------------
+def clean_document(record: dict, strip_diacritics: bool = False) -> dict:
+    raw_text = record["raw_text"]
+    raw_chars = len(raw_text)
+
+    # 1. encoding repair
+    repaired = ftfy.fix_text(raw_text)
+    ftfy_changed = repaired != raw_text
+
+    # 2. paragraph split
+    normalized_all = normalize_whitespace(repaired)
+    paragraphs = [p.strip() for p in normalized_all.split(PARAGRAPH_SEPARATOR)]
+    paragraphs = [p for p in paragraphs if p]
+
+    # 3. header detachment
+    roles, header_paragraphs, body_paragraphs = extract_header(paragraphs, record.get("title", ""))
+
+    # 4. normalization + placeholder accounting
+    # Two parallel views of the body are kept:
+    #   paragraphs           -> Arabic-normalized (alef/ya folded) - matching, dedup, default chunking
+    #   paragraphs_original  -> encoding-repaired + whitespace-cleaned only, orthography intact
+    # Alef/ya folding is lossy (نشأة -> نشاة, على -> علي). It is what you want as a
+    # comparison key, but usually NOT what you want as generative training text, so the
+    # unfolded form is preserved rather than thrown away.
+    cleaned_paragraphs: list[str] = []
+    original_paragraphs: list[str] = []
+    placeholders: list[dict] = []
+    for i, para in enumerate(body_paragraphs):
+        if MEDIA_PLACEHOLDER_RE.match(para):
+            placeholders.append({"body_index": i, "text": para})
+            continue
+        base = unicodedata.normalize("NFC", araby.strip_tatweel(para))
+        if strip_diacritics:
+            base = araby.strip_tashkeel(base)
+        base = base.strip()
+        norm = normalize_arabic(para, strip_diacritics=strip_diacritics).strip()
+        if norm:
+            cleaned_paragraphs.append(norm)
+            original_paragraphs.append(base)
+
+    cleaned_text = "\n\n".join(cleaned_paragraphs)
+    original_text = "\n\n".join(original_paragraphs)
+    header_text = "\n\n".join(header_paragraphs)
+    roles = {k: normalize_arabic(v, strip_diacritics=strip_diacritics) for k, v in roles.items()}
+
+    # 5. deltas + flags
+    # Measured against the orthography-preserving text, since that is what ships in
+    # chunks.jsonl. The folded body is reported alongside it for reference only.
+    retained_chars = len(original_text) + len(header_text)
+    loss_ratio = (raw_chars - retained_chars) / raw_chars if raw_chars else 0.0
+
+    flags: list[str] = []
+    if loss_ratio > CHAR_LOSS_FLAG_THRESHOLD:
+        flags.append("high_char_loss")
+    if not roles:
+        flags.append("no_header_detected")
+    if placeholders:
+        flags.append("media_placeholders_removed")
+    if len(cleaned_paragraphs) < 5:
+        flags.append("very_few_paragraphs")
+
+    cleaned = dict(record)
+    cleaned.pop("raw_text", None)
+    cleaned.update(
+        {
+            "cleaned_text": cleaned_text,
+            "paragraphs": cleaned_paragraphs,
+            "cleaned_text_original_orthography": original_text,
+            "paragraphs_original": original_paragraphs,
+            "header_block": header_text,
+            "translator": roles.get("translator"),
+            "reviewer": roles.get("reviewer"),
+            "editor": roles.get("editor"),
+            "author_stated": roles.get("author_stated"),
+            "header_roles": roles,
+            "removed_placeholders": placeholders,
+            "cleaning_stats": {
+                "char_count_raw": raw_chars,
+                "char_count_clean_body": len(original_text),
+                "char_count_header": len(header_text),
+                "char_count_retained": retained_chars,
+                "char_delta": raw_chars - retained_chars,
+                "char_loss_ratio": round(loss_ratio, 4),
+                "char_count_measured_against": "paragraphs_original (orthography-preserving, "
+                                               "the variant written to chunks.jsonl)",
+                "char_count_folded_body": len(cleaned_text),
+                "paragraph_count_raw": len(paragraphs),
+                "paragraph_count_body": len(original_paragraphs),
+                "header_paragraph_count": len(header_paragraphs),
+                "word_count_clean": word_count(original_text),
+                "ftfy_changed_text": ftfy_changed,
+            },
+            "review_flags": flags,
+            "cleaning_config": {
+                "strip_diacritics": strip_diacritics,
+                "paragraph_separator": "\\n\\n",
+                "normalizations": ["ftfy", "nfc", "tatweel", "alef_variants", "ya_alef_maksura", "whitespace"]
+                + (["tashkeel"] if strip_diacritics else []),
+                "char_loss_flag_threshold": CHAR_LOSS_FLAG_THRESHOLD,
+            },
+        }
+    )
+    return cleaned
+
+
+# --- Runner ------------------------------------------------------------------
+def iter_input_files(interim_dir: str) -> list[str]:
+    return sorted(
+        p for p in glob.glob(os.path.join(interim_dir, "*", "*.json"))
+        if not p.endswith("_cleaned.json")
+    )
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="Stage 1: deterministic cleaning.")
+    ap.add_argument("--interim-dir", default=INTERIM_DIR)
+    ap.add_argument("--report", default=REPORT_PATH)
+    ap.add_argument("--strip-diacritics", action="store_true",
+                    help="Strip tashkeel (default OFF: this batch's children's books use it meaningfully).")
+    args = ap.parse_args()
+
+    files = iter_input_files(args.interim_dir)
+    if not files:
+        raise SystemExit(f"No input JSON found under {args.interim_dir}")
+
+    report = {
+        "documents": [],
+        "flagged_for_review": [],
+        "config": {"strip_diacritics": args.strip_diacritics,
+                   "char_loss_flag_threshold": CHAR_LOSS_FLAG_THRESHOLD},
+    }
+
+    for path in files:
+        with open(path, encoding="utf-8") as f:
+            record = json.load(f)
+
+        cleaned = clean_document(record, strip_diacritics=args.strip_diacritics)
+        out_path = path[: -len(".json")] + "_cleaned.json"
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(cleaned, f, ensure_ascii=False, indent=2)
+
+        stats = cleaned["cleaning_stats"]
+        entry = {
+            "doc_id": cleaned["doc_id"],
+            "domain": cleaned["domain"],
+            "title": cleaned["title"],
+            "output": out_path.replace("\\", "/"),
+            "translator": cleaned.get("translator"),
+            "reviewer": cleaned.get("reviewer"),
+            **stats,
+            "review_flags": cleaned["review_flags"],
+        }
+        report["documents"].append(entry)
+        if cleaned["review_flags"]:
+            report["flagged_for_review"].append(entry)
+
+        print(
+            f"[clean] {cleaned['doc_id']:>10} {cleaned['domain']:<17} "
+            f"chars {stats['char_count_raw']:>7} -> {stats['char_count_retained']:>7} "
+            f"({stats['char_loss_ratio']*100:5.2f}% removed)  "
+            f"paras {stats['paragraph_count_body']:>5}  "
+            f"flags: {','.join(cleaned['review_flags']) or '-'}"
+        )
+
+    os.makedirs(os.path.dirname(args.report), exist_ok=True)
+    with open(args.report, "w", encoding="utf-8") as f:
+        json.dump(report, f, ensure_ascii=False, indent=2)
+
+    total_raw = sum(d["char_count_raw"] for d in report["documents"])
+    total_keep = sum(d["char_count_retained"] for d in report["documents"])
+    print(
+        f"\n[clean] {len(report['documents'])} documents cleaned | "
+        f"{total_raw:,} -> {total_keep:,} chars "
+        f"({(total_raw-total_keep)/total_raw*100:.2f}% removed overall) | "
+        f"{len(report['flagged_for_review'])} flagged for review"
+    )
+    print(f"[clean] report -> {args.report}")
+
+
+if __name__ == "__main__":
+    main()
