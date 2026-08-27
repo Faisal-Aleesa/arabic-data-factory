@@ -224,3 +224,6 @@ data/interim/*
 venv/
 __pycache__/
 *.pyc
+# Archived MSA-pilot intermediates: regenerable from the archived downloader, kept local
+archive/msa_pilot/interim/*
+!archive/msa_pilot/interim/.gitkeep

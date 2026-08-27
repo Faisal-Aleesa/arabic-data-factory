@@ -1,6 +1,6 @@
 """Stage 3 - Chunking.
 
-Input : data/interim/<domain>/<doc_id>_cleaned.json  (Stage 1 output)
+Input : data/interim/<region>/<doc_id>_cleaned.json  (Stage 1 output)
         data/processed/dedup_report.json             (Stage 2, optional - skips exact dupes)
 Output: data/processed/chunks.jsonl                  (one JSON object per line)
         data/processed/chunking_report.json
@@ -22,6 +22,22 @@ deterministic and dependency-free. For Modern Standard Arabic, a subword tokeniz
 (e.g. Llama/Qwen SentencePiece) typically emits ~1.5-2.5 subword tokens per whitespace
 word, so a 200-800 word chunk lands roughly in the 300-2000 subword-token band. Retune
 TARGET_MIN/TARGET_MAX once the training tokenizer is fixed.
+
+Formats (--format, explicit - no auto-detection)
+------------------------------------------------
+Stage 1 has already segmented each document into indivisible UNITS according to its own
+--format, and Stage 3 only ever packs whole units. What changes per format is the unit
+being packed and the format_type tag emitted:
+
+  prose       paragraphs -> "narrative_paragraph" / "prose" / "list" / "footnote_block"
+  dictionary  glossary entries -> "dictionary_entry". Short entries are bundled together
+              to approach the target band instead of emitting one tiny chunk per entry;
+              an entry is never split across chunks.
+  verse       stanzas (or verse lines) -> "verse". Stanzas are packed whole, never broken
+              mid-stanza, and chunks never span a poem boundary.
+
+Pass the same --format to clean.py and chunk.py for a given batch. A mismatch is caught
+and refused rather than silently producing garbage.
 
 Boundaries
 ----------
@@ -53,6 +69,12 @@ CHUNK_REPORT = "data/processed/chunking_report.json"
 TARGET_MIN = 200
 TARGET_MAX = 800
 
+FORMATS = ("prose", "dictionary", "verse")
+
+# A line that separates one poem from the next in a verse source (a title/heading line
+# sitting alone between stanzas). Chunks are never allowed to span one.
+POEM_BOUNDARY_RE = re.compile(r"^\s*(?:[*\-=~_]{3,}|#+\s|\[[^\]]+\])\s*$")
+
 # format_type heuristics
 LIST_MARKER_RE = re.compile(r"^\s*(?:[-•*]\s|\(?[٠-٩0-9]+\)|[٠-٩0-9]+[.)]\s)")
 FOOTNOTE_RE = re.compile(r"^\s*\^\(")
@@ -71,8 +93,12 @@ def is_heading(paragraph: str) -> bool:
     )
 
 
-def classify_format(paragraphs: list[str]) -> str:
-    """format_type for a chunk, from the paragraphs it contains."""
+def classify_format(paragraphs: list[str], fmt: str = "prose") -> str:
+    """format_type for a chunk, from the units it contains."""
+    if fmt == "dictionary":
+        return "dictionary_entry"
+    if fmt == "verse":
+        return "verse"
     n = len(paragraphs)
     if n == 0:
         return "empty"
@@ -88,27 +114,41 @@ def classify_format(paragraphs: list[str]) -> str:
     return "narrative_paragraph"
 
 
-def chunk_paragraphs(paragraphs: list[str], target_min: int, target_max: int) -> list[dict]:
-    """Greedy paragraph packing. Returns dicts with para_start/para_end/paragraphs."""
+def pack_units(units: list[str], target_min: int, target_max: int,
+               hard_break: "callable | None" = None) -> list[dict]:
+    """Greedily pack whole units into chunks. Units are never split.
+
+    Identical mechanics for all three formats - only what counts as a unit differs, which
+    Stage 1 already decided. `hard_break(unit) -> bool` marks a unit that must start a new
+    chunk regardless of how empty the current one is (used for poem boundaries in verse
+    sources, so one chunk never contains the tail of one poem and the head of the next).
+
+    Bundling short units is what keeps dictionary sources from producing one tiny chunk
+    per glossary entry: entries accumulate until the next one would overflow target_max.
+    """
     chunks: list[dict] = []
     buf: list[str] = []
     buf_tokens = 0
     start_idx = 0
 
     def flush(end_idx: int) -> None:
-        nonlocal buf, buf_tokens, start_idx
+        nonlocal buf, buf_tokens
         if not buf:
             return
-        chunks.append({"para_start": start_idx, "para_end": end_idx, "paragraphs": list(buf)})
+        chunks.append({"unit_start": start_idx, "unit_end": end_idx, "units": list(buf)})
         buf, buf_tokens = [], 0
 
-    for i, para in enumerate(paragraphs):
-        n = token_count(para)
+    for i, unit in enumerate(units):
+        n = token_count(unit)
+
+        if hard_break is not None and hard_break(unit) and buf:
+            flush(i - 1)
+            start_idx = i
 
         if n > target_max:
-            # oversize single paragraph: flush what we have, emit it alone
+            # oversize single unit: flush what we have, emit it alone, never split it
             flush(i - 1)
-            chunks.append({"para_start": i, "para_end": i, "paragraphs": [para]})
+            chunks.append({"unit_start": i, "unit_end": i, "units": [unit]})
             start_idx = i + 1
             continue
 
@@ -118,10 +158,10 @@ def chunk_paragraphs(paragraphs: list[str], target_min: int, target_max: int) ->
 
         if not buf:
             start_idx = i
-        buf.append(para)
+        buf.append(unit)
         buf_tokens += n
 
-    flush(len(paragraphs) - 1)
+    flush(len(units) - 1)
     return chunks
 
 
@@ -134,7 +174,7 @@ def load_kept_doc_ids(dedup_report_path: str) -> set[str] | None:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Stage 3: paragraph-boundary chunking.")
+    ap = argparse.ArgumentParser(description="Stage 3: unit-boundary chunking.")
     ap.add_argument("--interim-dir", default=INTERIM_DIR)
     ap.add_argument("--dedup-report", default=DEDUP_REPORT)
     ap.add_argument("--out", default=CHUNKS_PATH)
@@ -146,6 +186,9 @@ def main() -> None:
                          "correct for training); normalized = alef/ya-folded text, for "
                          "inspection only - folded text belongs in dedup matching, not in "
                          "chunk_text.")
+    ap.add_argument("--format", choices=FORMATS, default="prose", dest="fmt",
+                    help="Source structure of this batch (default: prose). Chosen explicitly - "
+                         "no auto-detection. Must match the --format used in clean.py.")
     args = ap.parse_args()
 
     kept = load_kept_doc_ids(args.dedup_report)
@@ -172,19 +215,28 @@ def main() -> None:
                 print(f"[chunk] skipping {doc['doc_id']} (exact duplicate)")
                 continue
 
+            doc_fmt = doc.get("source_format", "prose")
+            if doc_fmt != args.fmt:
+                raise SystemExit(
+                    f"[chunk] format mismatch on {doc['doc_id']}: cleaned as '{doc_fmt}' but "
+                    f"--format is '{args.fmt}'. Re-run clean.py --format {args.fmt}, or chunk "
+                    f"this batch with --format {doc_fmt}."
+                )
+
             key = "paragraphs" if args.text_variant == "normalized" else "paragraphs_original"
-            paragraphs = doc[key]
-            raw_chunks = chunk_paragraphs(paragraphs, args.target_min, args.target_max)
+            units = doc[key]
+            hard_break = POEM_BOUNDARY_RE.match if args.fmt == "verse" else None
+            raw_chunks = pack_units(units, args.target_min, args.target_max, hard_break)
 
             doc_tokens = 0
             for n, c in enumerate(raw_chunks):
-                text = "\n\n".join(c["paragraphs"])
+                text = "\n\n".join(c["units"])
                 tokens = token_count(text)
                 doc_tokens += tokens
 
                 flags = []
                 if tokens > args.target_max:
-                    flags.append("oversize_paragraph")
+                    flags.append(f"oversize_{doc.get('unit_type', 'paragraph')}")
                 elif tokens < args.target_min:
                     flags.append("below_target_min")
                 for fl in flags:
@@ -195,20 +247,22 @@ def main() -> None:
                     "doc_id": doc["doc_id"],
                     "source": doc["source"],
                     "license": doc["license"],
-                    "domain": doc["domain"],
-                    "format_type": classify_format(c["paragraphs"]),
+                    "region": doc.get("region") or doc.get("domain"),
+                    "format_type": classify_format(c["units"], args.fmt),
                     "token_count": tokens,
                     "chunk_text": text,
                     "source_pointer": {
-                        "para_start": c["para_start"],
-                        "para_end": c["para_end"],
-                        "paragraph_count": len(c["paragraphs"]),
+                        "unit_start": c["unit_start"],
+                        "unit_end": c["unit_end"],
+                        "unit_count": len(c["units"]),
+                        "unit_type": doc.get("unit_type", "paragraph"),
                     },
                     "title": doc["title"],
                     "author": doc["author"],
                     "translator": doc.get("translator"),
                     "token_count_method": "whitespace_word_count",
                     "text_variant": args.text_variant,
+                    "source_format": args.fmt,
                     "review_flags": flags,
                     "source_doc_flags": doc.get("review_flags", []),
                 }
@@ -217,23 +271,27 @@ def main() -> None:
             total_chunks += len(raw_chunks)
             per_doc.append({
                 "doc_id": doc["doc_id"],
-                "domain": doc["domain"],
+                "region": doc.get("region") or doc.get("domain"),
                 "title": doc["title"],
-                "paragraphs": len(paragraphs),
+                "unit_type": doc.get("unit_type", "paragraph"),
+                "units": len(units),
                 "chunks": len(raw_chunks),
                 "tokens": doc_tokens,
             })
-            print(f"[chunk] {doc['doc_id']:>10} {doc['domain']:<17} "
-                  f"{len(paragraphs):>5} paras -> {len(raw_chunks):>4} chunks "
-                  f"({doc_tokens:,} tokens)")
+            print(f"[chunk] {doc['doc_id']:>10} {str(doc.get('region')):<10} "
+                  f"{len(units):>5} {doc.get('unit_type', 'paragraph')}s -> "
+                  f"{len(raw_chunks):>4} chunks ({doc_tokens:,} tokens)")
 
     report = {
         "config": {
             "target_min_tokens": args.target_min,
             "target_max_tokens": args.target_max,
             "token_count_method": "whitespace_word_count (word-based approximation)",
-            "boundary_rule": "paragraph boundaries only; separator '\\n\\n' from Stage 1",
-            "oversize_policy": "kept whole and flagged, never split mid-paragraph",
+            "source_format": args.fmt,
+            "boundary_rule": "whole units only, as segmented by Stage 1's --format",
+            "oversize_policy": "kept whole and flagged, never split mid-unit",
+            "poem_boundary_rule": ("chunks never span a poem boundary"
+                                   if args.fmt == "verse" else "n/a"),
             "text_variant": args.text_variant,
         },
         "documents_chunked": len(per_doc),

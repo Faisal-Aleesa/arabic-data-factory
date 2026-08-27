@@ -156,7 +156,7 @@ def run(interim_dir: str, threshold: float, num_perm: int, shingle_size: int) ->
         "per_document": [
             {
                 "doc_id": d["doc_id"],
-                "domain": d["domain"],
+                "region": d.get("region") or d.get("domain"),
                 "sha256": sha256_of(canon[d["doc_id"]]),
                 "shingle_count": len(shingle_sets[d["doc_id"]]),
                 "status": "exact_duplicate" if d["doc_id"] in exact_duplicates

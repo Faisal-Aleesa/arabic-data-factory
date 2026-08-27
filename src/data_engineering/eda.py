@@ -25,7 +25,7 @@ CHUNK_REPORT = "data/processed/chunking_report.json"
 OUT_MD = "data/eda/eda_report_pilot.md"
 OUT_PNG = "data/eda/token_histogram_pilot.png"
 
-EXAMPLES_PER_DOMAIN = 3
+EXAMPLES_PER_REGION = 3
 EXAMPLE_CHARS = 420
 HIST_BINS = 12
 ASCII_WIDTH = 46
@@ -111,17 +111,19 @@ def build_report(chunks: list[dict], cleaning: dict, dedup: dict, chunking: dict
     tokens = sorted(c["token_count"] for c in chunks)
     total_tokens = sum(tokens)
 
-    by_domain: dict[str, list[dict]] = defaultdict(list)
+    by_region: dict[str, list[dict]] = defaultdict(list)
     for c in chunks:
-        by_domain[c["domain"]].append(c)
+        by_region[c.get("region") or c.get("domain")].append(c)
 
     L: list[str] = []
     A = L.append
 
-    A("# EDA Report - Arabic Post-Training Data Factory (Pilot Batch)")
+    A("# EDA Report - Saudi Regional Dialect Corpus")
     A("")
     A(f"- **Source corpus:** {chunks[0]['source']} | **License:** {chunks[0]['license']}")
-    A(f"- **Documents in:** {chunking.get('documents_chunked', '?')} books")
+    A(f"- **Documents in:** {chunking.get('documents_chunked', '?')}")
+    A(f"- **Source format:** `{chunking.get('config', {}).get('source_format', 'prose')}` "
+      f"(explicit per batch; clean.py and chunk.py must agree)")
     A(f"- **Chunks out:** {len(chunks):,}")
     A(f"- **Total tokens:** {total_tokens:,} "
       f"(*{chunks[0].get('token_count_method', 'whitespace_word_count')}* approximation)")
@@ -140,7 +142,7 @@ def build_report(chunks: list[dict], cleaning: dict, dedup: dict, chunking: dict
     A("")
     A("`token_count` is a **word-based approximation**: whitespace-delimited words "
       "(`len(text.split())`). No subword tokenizer is applied at this stage, so the "
-      "pipeline stays deterministic and model-agnostic. For MSA, a SentencePiece/BPE "
+      "pipeline stays deterministic and model-agnostic. For Arabic, a SentencePiece/BPE "
       "tokenizer typically yields ~1.5-2.5 subword tokens per word.")
     A("")
     stats = [
@@ -167,21 +169,21 @@ def build_report(chunks: list[dict], cleaning: dict, dedup: dict, chunking: dict
         A(f"![Token distribution]({os.path.basename(png_path)})")
     A("")
 
-    # ---------------- domain distribution ----------------
-    A("## 2. Domain distribution")
+    # ---------------- region distribution ----------------
+    A("## 2. Region distribution")
     A("")
     rows = []
-    for dom in sorted(by_domain, key=lambda d: -len(by_domain[d])):
-        cs = by_domain[dom]
+    for reg in sorted(by_region, key=lambda d: -len(by_region[d])):
+        cs = by_region[reg]
         tk = sorted(c["token_count"] for c in cs)
         docs = len({c["doc_id"] for c in cs})
         rows.append([
-            dom, docs, f"{len(cs):,}", f"{len(cs)/len(chunks)*100:.1f}%",
+            reg, docs, f"{len(cs):,}", f"{len(cs)/len(chunks)*100:.1f}%",
             f"{sum(tk):,}", f"{percentile(tk, 0.5):,.0f}",
         ])
     rows.append(["**total**", len({c['doc_id'] for c in chunks}), f"**{len(chunks):,}**",
                  "100.0%", f"**{total_tokens:,}**", f"{percentile(tokens, 0.5):,.0f}"])
-    A(md_table(["domain", "docs", "chunks", "share", "tokens", "median tokens"], rows,
+    A(md_table(["region", "docs", "chunks", "share", "tokens", "median tokens"], rows,
                ["---", "---:", "---:", "---:", "---:", "---:"]))
     A("")
 
@@ -189,10 +191,10 @@ def build_report(chunks: list[dict], cleaning: dict, dedup: dict, chunking: dict
     A("")
     doc_rows = []
     for d in chunking.get("per_document", []):
-        doc_rows.append([d["doc_id"], d["domain"], f"{d['paragraphs']:,}",
-                         f"{d['chunks']:,}", f"{d['tokens']:,}"])
-    A(md_table(["doc_id", "domain", "paragraphs", "chunks", "tokens"], doc_rows,
-               ["---", "---", "---:", "---:", "---:"]))
+        doc_rows.append([d["doc_id"], d.get("region", "-"), d.get("unit_type", "unit"),
+                         f"{d.get('units', 0):,}", f"{d['chunks']:,}", f"{d['tokens']:,}"])
+    A(md_table(["doc_id", "region", "unit type", "units", "chunks", "tokens"], doc_rows,
+               ["---", "---", "---", "---:", "---:", "---:"]))
     A("")
 
     A("### format_type distribution")
@@ -220,8 +222,8 @@ def build_report(chunks: list[dict], cleaning: dict, dedup: dict, chunking: dict
         worst = sorted(docs, key=lambda d: -d["char_loss_ratio"])[:5]
         A("Largest character deltas:")
         A("")
-        A(md_table(["doc_id", "domain", "chars in", "chars retained", "% removed", "flags"],
-                   [[d["doc_id"], d["domain"], f"{d['char_count_raw']:,}",
+        A(md_table(["doc_id", "region", "chars in", "chars retained", "% removed", "flags"],
+                   [[d["doc_id"], d.get("region", "-"), f"{d['char_count_raw']:,}",
                      f"{d['char_count_retained']:,}", f"{d['char_loss_ratio']*100:.2f}%",
                      ", ".join(d["review_flags"]) or "-"] for d in worst],
                    ["---", "---", "---:", "---:", "---:", "---"]))
@@ -231,8 +233,8 @@ def build_report(chunks: list[dict], cleaning: dict, dedup: dict, chunking: dict
     A(f"### Documents flagged during cleaning: **{len(flagged)}**")
     A("")
     if flagged:
-        A(md_table(["doc_id", "domain", "title", "% removed", "flags"],
-                   [[d["doc_id"], d["domain"], d["title"], f"{d['char_loss_ratio']*100:.2f}%",
+        A(md_table(["doc_id", "region", "title", "% removed", "flags"],
+                   [[d["doc_id"], d.get("region", "-"), d["title"], f"{d['char_loss_ratio']*100:.2f}%",
                      ", ".join(d["review_flags"])] for d in flagged],
                    ["---", "---", "---", "---:", "---"]))
         A("")
@@ -250,15 +252,19 @@ def build_report(chunks: list[dict], cleaning: dict, dedup: dict, chunking: dict
     if chunk_flags:
         A(md_table(["flag", "chunks", "meaning"],
                    [[k, v, {
-                       "below_target_min": "below 200 tokens - end-of-book tail, kept",
-                       "oversize_paragraph": "single paragraph > 800 tokens - kept whole, never split mid-paragraph",
+                       "below_target_min": "below 200 tokens - end-of-document tail, kept",
+                       "oversize_paragraph": "single paragraph > 800 tokens - kept whole",
+                       "oversize_stanza": "single stanza > 800 tokens - kept whole, never split mid-stanza",
+                       "oversize_entry_block": "single glossary entry > 800 tokens - kept whole",
+                       "oversize_entry_line": "single glossary entry > 800 tokens - kept whole",
+                       "oversize_verse_line": "single verse line > 800 tokens - kept whole",
                    }.get(k, "")] for k, v in sorted(chunk_flags.items())],
                    ["---", "---:", "---"]))
         A("")
         flagged_chunks = [c for c in chunks if c["review_flags"]]
-        A(md_table(["chunk_id", "domain", "tokens", "paragraphs", "flags"],
-                   [[c["chunk_id"], c["domain"], c["token_count"],
-                     c["source_pointer"]["paragraph_count"], ", ".join(c["review_flags"])]
+        A(md_table(["chunk_id", "region", "tokens", "units", "flags"],
+                   [[c["chunk_id"], c.get("region") or c.get("domain"), c["token_count"],
+                     c["source_pointer"].get("unit_count"), ", ".join(c["review_flags"])]
                     for c in sorted(flagged_chunks, key=lambda c: c["chunk_id"])],
                    ["---", "---", "---:", "---:", "---"]))
     else:
@@ -298,20 +304,27 @@ def build_report(chunks: list[dict], cleaning: dict, dedup: dict, chunking: dict
     # ---------------- examples ----------------
     A("## 5. Example chunks")
     A("")
-    A(f"{EXAMPLES_PER_DOMAIN} chunks per domain, sampled deterministically "
-      f"(evenly spaced through each domain's chunk list), truncated to ~{EXAMPLE_CHARS} characters.")
+    A(f"{EXAMPLES_PER_REGION} chunks per region, sampled deterministically "
+      f"(evenly spaced through each region's chunk list), truncated to ~{EXAMPLE_CHARS} characters.")
     A("")
-    for dom in sorted(by_domain):
-        cs = sorted(by_domain[dom], key=lambda c: c["chunk_id"])
-        picks = [cs[int(i * (len(cs) - 1) / max(EXAMPLES_PER_DOMAIN - 1, 1))]
-                 for i in range(min(EXAMPLES_PER_DOMAIN, len(cs)))]
-        A(f"### {dom}")
+    for reg in sorted(by_region):
+        cs = sorted(by_region[reg], key=lambda c: c["chunk_id"])
+        # a region with no more chunks than EXAMPLES_PER_REGION shows all of them;
+        # otherwise sample evenly across the list (never the same chunk twice)
+        if len(cs) <= EXAMPLES_PER_REGION:
+            picks = cs
+        else:
+            idxs = sorted({round(i * (len(cs) - 1) / (EXAMPLES_PER_REGION - 1))
+                           for i in range(EXAMPLES_PER_REGION)})
+            picks = [cs[i] for i in idxs]
+        A(f"### {reg}")
         A("")
         for c in picks:
             sp = c["source_pointer"]
+            ut = sp.get("unit_type", "unit")
             A(f"**`{c['chunk_id']}`** - {c['token_count']} tokens - "
-              f"`{c['format_type']}` - paragraphs {sp['para_start']}-{sp['para_end']} "
-              f"({sp['paragraph_count']} paras)  ")
+              f"`{c['format_type']}` - {ut} {sp['unit_start']}-{sp['unit_end']} "
+              f"({sp['unit_count']} {ut}s)  ")
             A(f"*{c['title']}* - {c['author']}"
               + (f" (tr. {c['translator']})" if c.get("translator") else ""))
             A("")

@@ -1,3 +1,4 @@
+# ARCHIVED (2026-08-27): Hindawi is a Modern Standard Arabic book corpus, so it no longer fits the Saudi regional dialect phase; kept for provenance and to regenerate the archived MSA pilot under archive/msa_pilot/. Writes the pre-pivot manifest schema (no corpus_phase/region columns).
 import json
 import csv
 import os

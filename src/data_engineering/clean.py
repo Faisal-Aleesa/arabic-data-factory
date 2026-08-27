@@ -1,21 +1,34 @@
 """Stage 1 - Cleaning.
 
-Deterministic cleaning of the acquired Hindawi books. No LLM calls anywhere.
+Deterministic cleaning of acquired source documents. No LLM calls anywhere.
 
-Input : data/interim/<domain>/<doc_id>.json          (from download_hindawi_corpus.py)
-Output: data/interim/<domain>/<doc_id>_cleaned.json  (originals are never overwritten)
+Input : data/interim/<region>/<doc_id>.json          (najdi | southern | northern |
+                                                      eastern | western)
+Output: data/interim/<region>/<doc_id>_cleaned.json  (originals are never overwritten)
         data/processed/cleaning_report.json          (per-doc stats + review flags)
 
+DIALECT PHASE NOTE
+------------------
+Regional spelling variation is the signal this corpus exists to capture, so the shipped
+text is never "corrected". Two rules enforce that:
+
+  * `paragraphs_original` (what Stage 3 writes into chunks.jsonl) keeps أ/إ/آ and ى
+    exactly as written, and keeps tatweel unless --strip-tatweel is passed. Expressive
+    elongation (يا هــــلا) is dialect signal, not typographic padding.
+  * `paragraphs` is the folded matching key (alef/ya folded, tatweel always stripped).
+    It exists only for dedup.py's SHA-256 and MinHash. It is never shipped.
+
 Pipeline per document
-  1. ftfy encoding repair on raw_text (no-op for this EPUB batch, needed for later PDFs).
-  2. Split into paragraphs on the blank-line separator used by the corpus ("\\n\\n").
-  3. Detach the front-matter header block (title / تأليف / ترجمة / مراجعة ...) and keep
+  1. ftfy encoding repair on raw_text.
+  2. Segment the body according to --format (see SEGMENTERS): blank-line paragraphs for
+     prose, stanzas/verse lines for poetry, entry blocks/lines for dictionaries. The
+     segment list is what Stage 3 packs into chunks, so getting this right per source
+     type matters more than anything else in this stage.
+  3. Detach any front-matter header block (title / تأليف / ترجمة / مراجعة ...) and keep
      it as structured metadata instead of throwing it away.
-  4. Arabic normalization (pyarabic): alef variants, ya/alef-maksura, tatweel,
-     whitespace. Diacritic stripping is a flag, default OFF. Both the normalized text
-     (`paragraphs`) and the orthography-preserving text (`paragraphs_original`) are
-     written, since alef/ya folding is lossy and better suited to matching than to
-     generative training text.
+  4. Arabic normalization (pyarabic) into the two variants described above. Diacritic
+     stripping is a flag, default OFF - poetry and dialect transcription often carry
+     meaningful vocalization.
   5. Track a before/after character delta and flag anything that lost >30% of its
      characters, plus a few other review signals. Nothing is ever dropped silently.
      The delta is measured against the orthography-preserving text (+ the detached
@@ -40,9 +53,11 @@ INTERIM_DIR = "data/interim"
 REPORT_PATH = "data/processed/cleaning_report.json"
 
 # --- Cleaning parameters -----------------------------------------------------
-PARAGRAPH_SEPARATOR = "\n\n"      # verified against all 20 pilot books
+PARAGRAPH_SEPARATOR = "\n\n"      # blank line between blocks
 CHAR_LOSS_FLAG_THRESHOLD = 0.30   # flag doc for manual review above this loss
 MAX_HEADER_PARAGRAPHS = 12        # safety cap so we never eat real prose
+
+FORMATS = ("prose", "dictionary", "verse")
 
 # Front-matter role markers used by Hindawi e-books. The marker sits on its own
 # line, the name(s) follow on the next line(s) inside the same paragraph.
@@ -88,7 +103,7 @@ def normalize_whitespace(text: str) -> str:
 
 
 def normalize_arabic(text: str, strip_diacritics: bool = False) -> str:
-    """Alef variants, ya/alef-maksura, tatweel, optional diacritics."""
+    """Folded MATCHING KEY only - never shipped. Alef/ya folded, tatweel always stripped."""
     text = unicodedata.normalize("NFC", text)
     text = araby.strip_tatweel(text)
     text = text.translate(NORMALIZE_TABLE)
@@ -97,8 +112,62 @@ def normalize_arabic(text: str, strip_diacritics: bool = False) -> str:
     return text
 
 
+def preserve_orthography(text: str, strip_diacritics: bool = False,
+                         strip_tatweel: bool = False) -> str:
+    """Shipped text. Alef/ya spelling is left exactly as written; tatweel only on request."""
+    text = unicodedata.normalize("NFC", text)
+    if strip_tatweel:
+        text = araby.strip_tatweel(text)
+    if strip_diacritics:
+        text = araby.strip_tashkeel(text)
+    return text
+
+
 def word_count(text: str) -> int:
     return len(text.split())
+
+
+# --- Segmentation ------------------------------------------------------------
+# Each segmenter returns (units, unit_type). A "unit" is the smallest thing Stage 3 is
+# allowed to treat as indivisible: a prose paragraph, a whole glossary entry, a whole
+# stanza. Splitting rules differ per source type, and getting this wrong upstream is
+# invisible downstream - a glossary segmented as prose becomes one giant blob.
+def segment_prose(text: str) -> tuple[list[str], str]:
+    """Blank-line separated paragraphs; single newlines stay inside a paragraph."""
+    return [p.strip() for p in text.split(PARAGRAPH_SEPARATOR) if p.strip()], "paragraph"
+
+
+def segment_verse(text: str) -> tuple[list[str], str]:
+    """Stanzas (blank-line separated), internal line breaks preserved.
+
+    A poem written without blank lines has no stanza structure to recover, so each line
+    becomes its own unit rather than silently gluing the whole poem into one blob.
+    """
+    blocks = [b.strip() for b in text.split(PARAGRAPH_SEPARATOR) if b.strip()]
+    if len(blocks) > 1:
+        return blocks, "stanza"
+    lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
+    return lines, "verse_line"
+
+
+def segment_dictionary(text: str) -> tuple[list[str], str]:
+    """One unit per glossary entry (headword + definition + any example).
+
+    Two conventions are handled: entries separated by a blank line, and one entry per
+    line. Which one applies is decided per document by whether blank lines exist at all.
+    """
+    blocks = [b.strip() for b in text.split(PARAGRAPH_SEPARATOR) if b.strip()]
+    if len(blocks) > 1:
+        return blocks, "entry_block"
+    lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
+    return lines, "entry_line"
+
+
+SEGMENTERS = {
+    "prose": segment_prose,
+    "verse": segment_verse,
+    "dictionary": segment_dictionary,
+}
 
 
 # --- Header (front-matter) extraction ----------------------------------------
@@ -174,7 +243,8 @@ def extract_header(paragraphs: list[str], title: str) -> tuple[dict, list[str], 
 
 
 # --- Per-document cleaning ---------------------------------------------------
-def clean_document(record: dict, strip_diacritics: bool = False) -> dict:
+def clean_document(record: dict, strip_diacritics: bool = False, fmt: str = "prose",
+                   strip_tatweel: bool = False) -> dict:
     raw_text = record["raw_text"]
     raw_chars = len(raw_text)
 
@@ -182,10 +252,9 @@ def clean_document(record: dict, strip_diacritics: bool = False) -> dict:
     repaired = ftfy.fix_text(raw_text)
     ftfy_changed = repaired != raw_text
 
-    # 2. paragraph split
+    # 2. format-aware segmentation
     normalized_all = normalize_whitespace(repaired)
-    paragraphs = [p.strip() for p in normalized_all.split(PARAGRAPH_SEPARATOR)]
-    paragraphs = [p for p in paragraphs if p]
+    paragraphs, unit_type = SEGMENTERS[fmt](normalized_all)
 
     # 3. header detachment
     roles, header_paragraphs, body_paragraphs = extract_header(paragraphs, record.get("title", ""))
@@ -204,10 +273,8 @@ def clean_document(record: dict, strip_diacritics: bool = False) -> dict:
         if MEDIA_PLACEHOLDER_RE.match(para):
             placeholders.append({"body_index": i, "text": para})
             continue
-        base = unicodedata.normalize("NFC", araby.strip_tatweel(para))
-        if strip_diacritics:
-            base = araby.strip_tashkeel(base)
-        base = base.strip()
+        base = preserve_orthography(para, strip_diacritics=strip_diacritics,
+                                    strip_tatweel=strip_tatweel).strip()
         norm = normalize_arabic(para, strip_diacritics=strip_diacritics).strip()
         if norm:
             cleaned_paragraphs.append(norm)
@@ -220,14 +287,18 @@ def clean_document(record: dict, strip_diacritics: bool = False) -> dict:
 
     # 5. deltas + flags
     # Measured against the orthography-preserving text, since that is what ships in
-    # chunks.jsonl. The folded body is reported alongside it for reference only.
-    retained_chars = len(original_text) + len(header_text)
+    # chunks.jsonl. Separators are excluded: re-joining units with "\n\n" can ADD
+    # characters relative to a single-newline source (a glossary, say), which would
+    # otherwise show up as a nonsensical negative loss. Only content characters count.
+    retained_chars = sum(len(u) for u in original_paragraphs) + sum(len(h) for h in header_paragraphs)
     loss_ratio = (raw_chars - retained_chars) / raw_chars if raw_chars else 0.0
 
     flags: list[str] = []
     if loss_ratio > CHAR_LOSS_FLAG_THRESHOLD:
         flags.append("high_char_loss")
-    if not roles:
+    # Front matter is a book convention. Only prose sources are expected to carry it,
+    # so flagging its absence on a glossary or a diwan would be pure noise.
+    if fmt == "prose" and not roles:
         flags.append("no_header_detected")
     if placeholders:
         flags.append("media_placeholders_removed")
@@ -236,8 +307,14 @@ def clean_document(record: dict, strip_diacritics: bool = False) -> dict:
 
     cleaned = dict(record)
     cleaned.pop("raw_text", None)
+    # `region` replaces the MSA phase's `domain` as the partition key.
+    region = record.get("region") or record.get("domain")
+    cleaned.pop("domain", None)
     cleaned.update(
         {
+            "region": region,
+            "source_format": fmt,
+            "unit_type": unit_type,
             "cleaned_text": cleaned_text,
             "paragraphs": cleaned_paragraphs,
             "cleaned_text_original_orthography": original_text,
@@ -256,20 +333,30 @@ def clean_document(record: dict, strip_diacritics: bool = False) -> dict:
                 "char_count_retained": retained_chars,
                 "char_delta": raw_chars - retained_chars,
                 "char_loss_ratio": round(loss_ratio, 4),
-                "char_count_measured_against": "paragraphs_original (orthography-preserving, "
-                                               "the variant written to chunks.jsonl)",
+                "char_count_measured_against": "paragraphs_original + header units "
+                                               "(orthography-preserving content, excluding "
+                                               "structural separators)",
                 "char_count_folded_body": len(cleaned_text),
-                "paragraph_count_raw": len(paragraphs),
-                "paragraph_count_body": len(original_paragraphs),
+                "unit_count_raw": len(paragraphs),
+                "unit_count_body": len(original_paragraphs),
                 "header_paragraph_count": len(header_paragraphs),
                 "word_count_clean": word_count(original_text),
                 "ftfy_changed_text": ftfy_changed,
             },
             "review_flags": flags,
             "cleaning_config": {
+                "source_format": fmt,
+                "unit_type": unit_type,
                 "strip_diacritics": strip_diacritics,
+                "strip_tatweel": strip_tatweel,
                 "paragraph_separator": "\\n\\n",
-                "normalizations": ["ftfy", "nfc", "tatweel", "alef_variants", "ya_alef_maksura", "whitespace"]
+                # applied to the SHIPPED text (paragraphs_original)
+                "shipped_text_transforms": ["ftfy", "nfc", "whitespace"]
+                + (["tatweel"] if strip_tatweel else [])
+                + (["tashkeel"] if strip_diacritics else []),
+                # applied to the folded MATCHING KEY only (paragraphs / cleaned_text)
+                "matching_key_transforms": ["ftfy", "nfc", "tatweel", "alef_variants",
+                                            "ya_alef_maksura", "whitespace"]
                 + (["tashkeel"] if strip_diacritics else []),
                 "char_loss_flag_threshold": CHAR_LOSS_FLAG_THRESHOLD,
             },
@@ -290,8 +377,17 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Stage 1: deterministic cleaning.")
     ap.add_argument("--interim-dir", default=INTERIM_DIR)
     ap.add_argument("--report", default=REPORT_PATH)
+    ap.add_argument("--format", choices=FORMATS, default="prose", dest="fmt",
+                    help="Source structure of this batch (default: prose). Chosen explicitly - "
+                         "no auto-detection. prose = blank-line paragraphs; dictionary = glossary "
+                         "entries; verse = stanzas/verse lines.")
     ap.add_argument("--strip-diacritics", action="store_true",
-                    help="Strip tashkeel (default OFF: this batch's children's books use it meaningfully).")
+                    help="Strip tashkeel (default OFF: dialect transcription and poetry often "
+                         "carry meaningful vocalization).")
+    ap.add_argument("--strip-tatweel", action="store_true",
+                    help="Strip tatweel from the SHIPPED text (default OFF: expressive elongation "
+                         "such as يا هــلا is dialect signal). The folded matching key always has "
+                         "tatweel stripped regardless.")
     args = ap.parse_args()
 
     files = iter_input_files(args.interim_dir)
@@ -301,7 +397,9 @@ def main() -> None:
     report = {
         "documents": [],
         "flagged_for_review": [],
-        "config": {"strip_diacritics": args.strip_diacritics,
+        "config": {"source_format": args.fmt,
+                   "strip_diacritics": args.strip_diacritics,
+                   "strip_tatweel": args.strip_tatweel,
                    "char_loss_flag_threshold": CHAR_LOSS_FLAG_THRESHOLD},
     }
 
@@ -309,7 +407,8 @@ def main() -> None:
         with open(path, encoding="utf-8") as f:
             record = json.load(f)
 
-        cleaned = clean_document(record, strip_diacritics=args.strip_diacritics)
+        cleaned = clean_document(record, strip_diacritics=args.strip_diacritics,
+                                 fmt=args.fmt, strip_tatweel=args.strip_tatweel)
         out_path = path[: -len(".json")] + "_cleaned.json"
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(cleaned, f, ensure_ascii=False, indent=2)
@@ -317,7 +416,9 @@ def main() -> None:
         stats = cleaned["cleaning_stats"]
         entry = {
             "doc_id": cleaned["doc_id"],
-            "domain": cleaned["domain"],
+            "region": cleaned["region"],
+            "source_format": cleaned["source_format"],
+            "unit_type": cleaned["unit_type"],
             "title": cleaned["title"],
             "output": out_path.replace("\\", "/"),
             "translator": cleaned.get("translator"),
@@ -330,10 +431,10 @@ def main() -> None:
             report["flagged_for_review"].append(entry)
 
         print(
-            f"[clean] {cleaned['doc_id']:>10} {cleaned['domain']:<17} "
+            f"[clean] {cleaned['doc_id']:>10} {str(cleaned['region']):<10} "
             f"chars {stats['char_count_raw']:>7} -> {stats['char_count_retained']:>7} "
             f"({stats['char_loss_ratio']*100:5.2f}% removed)  "
-            f"paras {stats['paragraph_count_body']:>5}  "
+            f"{cleaned['unit_type']}s {stats['unit_count_body']:>5}  "
             f"flags: {','.join(cleaned['review_flags']) or '-'}"
         )
 
