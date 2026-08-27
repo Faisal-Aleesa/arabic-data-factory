@@ -18,7 +18,8 @@ happen while they are still visible:
     land inside a glossary entry.
   * DAMAGED PAGES - a minority of pages in the source PDF draw overlapping text runs that
     pdftotext interleaves into unreadable tokens
-    ("ب(حضـثملا)ل:حاءْحثَا–لَة:ك اللحاشءئمخرفدفةئ"). Those pages are EXCLUDED from the
+    (two columns colliding into one run of letters, e.g. "أبجدهـوزحطي" where two separate
+    words were drawn at overlapping positions). Those pages are EXCLUDED from the
     document body and logged with their page number and a snippet. No automatic repair is
     attempted - the review file is the handle for redoing them later with a different
     extraction approach.
@@ -40,7 +41,7 @@ INTERIM_DIR = "data/interim"
 REVIEW_CSV = "docs/damaged_pages_review.csv"
 
 # First printed page contained in each region's extract (see docs: verified against the
-# book's part-title pages, الباب الأول ... الباب الخامس).
+# book's five part-title pages).
 REGION_FIRST_PAGE = {
     "najdi": 19,
     "northern": 325,

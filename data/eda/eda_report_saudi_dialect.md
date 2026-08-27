@@ -68,7 +68,7 @@ tokens/chunk        | histogram                                     count
 | dialect_dict_eastern | eastern | entry_headword | 872 | 30 | 22,556 |
 | dialect_dict_najdi | najdi | entry_headword | 2,159 | 135 | 100,133 |
 | dialect_dict_northern | northern | entry_headword | 1,192 | 51 | 38,615 |
-| dialect_dict_southern | southern | entry_headword | 2,828 | 105 | 79,767 |
+| dialect_dict_southern | southern | entry_headword | 2,830 | 105 | 79,767 |
 | dialect_dict_western | western | entry_headword | 791 | 25 | 18,426 |
 
 ### format_type distribution
@@ -79,7 +79,7 @@ tokens/chunk        | histogram                                     count
 
 ## 3. Cleaning stage and items flagged for review
 
-- Characters in: **1,589,826** -> retained: **1,537,435** (**3.30%** removed overall)
+- Characters in: **1,589,826** -> retained: **1,537,432** (**3.30%** removed overall)
 - Flag threshold: a document is flagged when cleaning removes more than **30%** of its characters
 - Diacritic stripping: **OFF** (default off - two children's books in this batch are fully vocalized)
 
@@ -89,7 +89,7 @@ Largest character deltas:
 | --- | --- | ---: | ---: | ---: | --- |
 | dialect_dict_northern | northern | 238,188 | 227,638 | 4.43% | - |
 | dialect_dict_najdi | najdi | 614,548 | 593,174 | 3.48% | - |
-| dialect_dict_southern | southern | 484,268 | 470,108 | 2.92% | - |
+| dialect_dict_southern | southern | 484,268 | 470,105 | 2.92% | - |
 | dialect_dict_eastern | eastern | 138,741 | 135,057 | 2.66% | - |
 | dialect_dict_western | western | 114,081 | 111,458 | 2.30% | - |
 

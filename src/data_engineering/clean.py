@@ -59,17 +59,19 @@ MAX_HEADER_PARAGRAPHS = 12        # safety cap so we never eat real prose
 
 FORMATS = ("prose", "dictionary", "verse")
 
-# A glossary headword opening a line: a parenthesised term followed by a colon, e.g.
-#   (إستَن) :انتظر...        ( َعكس) :بفتح العين...        (هب لي) :هب لي أي أعطني
+# A glossary headword opening a line: a parenthesised term followed by a colon. All
+# examples below are INVENTED placeholders that exercise the same shapes - no text from
+# a rights-unverified source appears in this file. Matches:
+#   (كلمة) :تعريفها        ( َمثَل) :تعريف بمدخل مشكول        (كلمتان معا) :تعريف مركب
 # The opening delimiter is matched as [()] because bidi reordering in the extracted
 # text sometimes renders it as ")". Requiring the closing ")" AND the colon is what
-# keeps this off numbered feature lines like "( :)1إبدال الثاء تاء" and off mid-entry
-# parentheticals such as "(بابلية - أشورية).و(اللفظة عامية...".
+# keeps this off numbered feature lines like "( :)1ظاهرة صوتية" and off mid-entry
+# parentheticals such as "(إشارة جانبية).وتكملة التعريف...".
 HEADWORD_RE = re.compile(r"(?m)^[ \t]*[()][^)\n]{1,45}\)[ \t]*:")
 MIN_HEADWORDS_FOR_ENTRY_SPLIT = 5
 
-# A sub-section heading standing on its own line, e.g.
-#   ( الباب الأول )      ( لهجة حوطة بني تميم )      ( بعض الظواهر والخصائص في لهجة شمر )
+# A sub-section heading standing on its own line. Invented placeholders again:
+#   ( الباب الثامن )      ( لهجة قبيلة فلان )      ( بعض السمات الافتراضية )
 # These carry no headword, so without a secondary break the whole sub-section preamble
 # (title + prose introduction + numbered feature list) attaches as a tail to whatever
 # glossary entry happened to precede it. Headings are always short standalone lines and
@@ -77,12 +79,14 @@ MIN_HEADWORDS_FOR_ENTRY_SPLIT = 5
 #
 # The line must be WHOLLY parenthesised (optionally prefixed by لهجة/لهجات, optionally
 # followed by a footnote marker like "()1"). That is what separates a real heading from
-# the book's very frequent cross-reference lines inside definitions - "لهجة اسد ص 54-56",
-# "لهجات اخرى .قال مشعان الهذال" - which start with the same words but are running prose
+# the cross-reference lines that run inside definitions - "لهجة قبيلة أخرى ص 12-14",
+# "لهجات مجاورة .قال الشاعر فلان" - which open with the same words but are running prose
 # and must not break an entry apart.
 SECTION_HEADING_RE = re.compile(
     r"(?m)^[ \t]*(?:"
-    r"لهجات?[ \t]*\([^)\n]{1,80}\)"                    # لهجة ( رجال الحجر )
+    # لهج(ة|ات?) - the singular ends in teh marbuta, so "لهجات?" alone would never
+    # match it and this whole branch would be dead for the commonest heading form.
+    r"لهج(?:ة|ات?)[ \t]*\([^)\n]{1,80}\)"              # لهجة ( اسم الموضع )
     r"|\([ \t]*(?:الباب|لهجات|لهجة|بعض|الصفات|الألفاظ|الالفاظ)[^)\n]{0,80}\)"
     r")[ \t]*(?:\([ \t]*\)[ \t]*\d+)?[ \t]*$"
 )
@@ -186,11 +190,11 @@ def segment_dictionary(text: str) -> tuple[list[str], str]:
 
       1. HEADWORD-ANCHORED (`entry_headword`) - an entry opens with a parenthesised
          headword followed by a colon, and its definition runs across as many lines as
-         it needs until the next headword starts. This is the convention in
-         معجم اللهجات المحكية, where neither blank lines nor line breaks delimit entries:
-             (إستَن) :انتظر، تمهل، استناني :انتظرني...
-             وفي متن اللغة استأنى به انتظر به ولم يَعجل.
-             (استَـنكَر) :مستنكر: لم يتحقق جيدا من الوضع...
+         it needs until the next headword starts. Neither blank lines nor line breaks
+         delimit entries. Shape (invented placeholder text):
+             (كلمة) :تعريفها الأول، ثم مثال على استعمالها في جملة
+             وتكملة التعريف تنساب على سطر ثانٍ وثالث بلا سطر فارغ يفصلها.
+             (كلمة أخرى) :يبدأ المدخل التالي هنا.
          Splitting such a source on blank lines yields page-sized blobs; splitting on
          line breaks shreds every definition. Chosen whenever the text carries enough
          headword matches to be unambiguous.
