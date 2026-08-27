@@ -34,6 +34,19 @@ NUM_PERM = 128
 SHINGLE_SIZE = 5      # word n-gram size
 DEFAULT_THRESHOLD = 0.8
 
+# LSH banding is probabilistic: a pair sitting near the index threshold has only ~50%
+# chance of being emitted as a candidate, so indexing at 0.8 silently misses genuine
+# 0.80-0.85 near-duplicates (the self-test caught exactly that). The index is therefore
+# built at a LOOSER threshold and used purely as a candidate generator - every candidate
+# is still confirmed against the true Jaccard at DEFAULT_THRESHOLD, so recall improves
+# without admitting a single false positive.
+LSH_THRESHOLD_MARGIN = 0.2
+MIN_LSH_THRESHOLD = 0.3
+
+
+def lsh_threshold_for(threshold: float) -> float:
+    return round(max(MIN_LSH_THRESHOLD, threshold - LSH_THRESHOLD_MARGIN), 4)
+
 
 def load_cleaned_docs(interim_dir: str) -> list[dict]:
     docs = []
@@ -106,7 +119,8 @@ def run(interim_dir: str, threshold: float, num_perm: int, shingle_size: int) ->
     shingle_sets = {d["doc_id"]: shingles(canon[d["doc_id"]], shingle_size) for d in docs}
     minhashes = {doc_id: build_minhash(s, num_perm) for doc_id, s in shingle_sets.items()}
 
-    lsh = MinHashLSH(threshold=threshold, num_perm=num_perm)
+    lsh_t = lsh_threshold_for(threshold)
+    lsh = MinHashLSH(threshold=lsh_t, num_perm=num_perm)
     for doc_id, mh in minhashes.items():
         lsh.insert(doc_id, mh)
 
@@ -131,8 +145,8 @@ def run(interim_dir: str, threshold: float, num_perm: int, shingle_size: int) ->
                     "action": "flagged_for_review",
                 })
 
-    print(f"[dedup] near pass: {len(seen_pairs)} LSH candidate pair(s), "
-          f"{len(near_pairs)} confirmed above Jaccard {threshold}")
+    print(f"[dedup] near pass: {len(seen_pairs)} LSH candidate pair(s) "
+          f"(index threshold {lsh_t}), {len(near_pairs)} confirmed above Jaccard {threshold}")
 
     kept = [d["doc_id"] for d in docs if d["doc_id"] not in exact_duplicates]
     flagged_ids = sorted({i for p in near_pairs for i in (p["doc_a"], p["doc_b"])})
@@ -142,6 +156,10 @@ def run(interim_dir: str, threshold: float, num_perm: int, shingle_size: int) ->
             "exact_method": "sha256 of whitespace-collapsed cleaned_text",
             "near_method": f"MinHash+LSH, word {shingle_size}-shingles, num_perm={num_perm}",
             "jaccard_threshold": threshold,
+            "lsh_index_threshold": lsh_t,
+            "lsh_note": ("index built looser than the decision threshold so banding does "
+                         "not drop borderline pairs; every candidate is re-checked "
+                         "against the true Jaccard"),
             "near_duplicate_policy": "flag only, never auto-remove",
         },
         "documents_scanned": len(docs),
@@ -190,16 +208,20 @@ def self_test(interim_dir: str, threshold: float, num_perm: int, shingle_size: i
             min(docs, key=lambda d: len(d["cleaned_text"]))["cleaned_text"]), shingle_size),
     }
     mhs = {k: build_minhash(v, num_perm) for k, v in sets.items()}
-    lsh = MinHashLSH(threshold=threshold, num_perm=num_perm)
+    lsh = MinHashLSH(threshold=lsh_threshold_for(threshold), num_perm=num_perm)
     for k, m in mhs.items():
         lsh.insert(k, m)
 
     exact_hit = sha256_of(text) == sha256_of(text)
-    near_hits = {k for k in lsh.query(mhs["original"]) if k != "original"}
+    # candidates from the loose index, then the real decision on true Jaccard
+    cands = {k for k in lsh.query(mhs["original"]) if k != "original"}
+    near_hits = {k for k in cands
+                 if true_jaccard(sets["original"], sets[k]) >= threshold}
     results = {
         "base_doc_id": base["doc_id"],
         "exact_sha_match": exact_hit,
-        "lsh_neighbours_of_original": sorted(near_hits),
+        "lsh_candidates_of_original": sorted(cands),
+        "confirmed_near_duplicates": sorted(near_hits),
         "jaccard_exact_copy": round(true_jaccard(sets["original"], sets["exact_copy"]), 4),
         "jaccard_near_copy": round(true_jaccard(sets["original"], sets["near_copy"]), 4),
         "jaccard_unrelated": round(true_jaccard(sets["original"], sets["unrelated"]), 4),

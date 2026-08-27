@@ -1,0 +1,62 @@
+{
+  "config": {
+    "exact_method": "sha256 of whitespace-collapsed cleaned_text",
+    "near_method": "MinHash+LSH, word 5-shingles, num_perm=128",
+    "jaccard_threshold": 0.8,
+    "lsh_index_threshold": 0.6,
+    "lsh_note": "index built looser than the decision threshold so banding does not drop borderline pairs; every candidate is re-checked against the true Jaccard",
+    "near_duplicate_policy": "flag only, never auto-remove"
+  },
+  "documents_scanned": 5,
+  "exact_duplicate_groups": [],
+  "exact_duplicates_removed": 0,
+  "exact_duplicate_map": {},
+  "near_duplicate_candidate_pairs": 0,
+  "near_duplicate_pairs": [],
+  "near_duplicates_flagged": [],
+  "documents_kept": [
+    "dialect_dict_eastern",
+    "dialect_dict_najdi",
+    "dialect_dict_northern",
+    "dialect_dict_southern",
+    "dialect_dict_western"
+  ],
+  "documents_kept_count": 5,
+  "per_document": [
+    {
+      "doc_id": "dialect_dict_eastern",
+      "region": "eastern",
+      "sha256": "b4a000b55a18df36c4da654383809d3028e3a7e21c28f4ee9a00da528da7dd4b",
+      "shingle_count": 22219,
+      "status": "unique"
+    },
+    {
+      "doc_id": "dialect_dict_najdi",
+      "region": "najdi",
+      "sha256": "b34695914b3961faab2be2e2ad74641256b9ad59212d4141fc0cbe0833516ea2",
+      "shingle_count": 98700,
+      "status": "unique"
+    },
+    {
+      "doc_id": "dialect_dict_northern",
+      "region": "northern",
+      "sha256": "3417fa147c60aeb0e5e99f7338b730c553c0104fa726df41df06dccd5f3eafdc",
+      "shingle_count": 37971,
+      "status": "unique"
+    },
+    {
+      "doc_id": "dialect_dict_southern",
+      "region": "southern",
+      "sha256": "cc16493b9b101873d62d3b53ab585a37246f1b4bd16fd91380b13fef8ae31053",
+      "shingle_count": 77644,
+      "status": "unique"
+    },
+    {
+      "doc_id": "dialect_dict_western",
+      "region": "western",
+      "sha256": "3accfce38af8434d80392d9902209e30dfdfe59d9afaf199c6313b350ef64fc9",
+      "shingle_count": 18324,
+      "status": "unique"
+    }
+  ]
+}
