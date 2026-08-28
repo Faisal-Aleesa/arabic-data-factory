@@ -114,7 +114,7 @@ def classify_format(paragraphs: list[str], fmt: str = "prose") -> str:
     return "narrative_paragraph"
 
 
-def pack_units(units: list[str], target_min: int, target_max: int,
+def pack_units(units: list[str], target_max: int,
                hard_break: "callable | None" = None) -> list[dict]:
     """Greedily pack whole units into chunks. Units are never split.
 
@@ -226,7 +226,7 @@ def main() -> None:
             key = "paragraphs" if args.text_variant == "normalized" else "paragraphs_original"
             units = doc[key]
             hard_break = POEM_BOUNDARY_RE.match if args.fmt == "verse" else None
-            raw_chunks = pack_units(units, args.target_min, args.target_max, hard_break)
+            raw_chunks = pack_units(units, args.target_max, hard_break)
 
             doc_tokens = 0
             for n, c in enumerate(raw_chunks):

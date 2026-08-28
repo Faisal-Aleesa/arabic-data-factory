@@ -1,6 +1,6 @@
 """Stage 2 - Deduplication (document level).
 
-Input : data/interim/<domain>/<doc_id>_cleaned.json   (Stage 1 output)
+Input : data/interim/<region>/<doc_id>_cleaned.json   (Stage 1 output)
 Output: data/processed/dedup_report.json              (always written, even if 0 dupes)
 
 Two passes:
