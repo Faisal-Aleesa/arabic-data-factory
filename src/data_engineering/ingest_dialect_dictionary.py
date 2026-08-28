@@ -8,6 +8,7 @@ Input : data/raw/<region>/dialect_dictionary_<region>.txt   (pdftotext -layout o
                                                               form-feed separated pages)
 Output: data/interim/<region>/<doc_id>.json                  (clean.py's input schema)
         docs/damaged_pages_review.csv                        (pages held back, for review)
+        docs/residue_tokens_review.csv                       (short fragments, for review)
 
 Why a page-aware step exists at all
 -----------------------------------
@@ -39,6 +40,7 @@ import re
 RAW_DIR = "data/raw"
 INTERIM_DIR = "data/interim"
 REVIEW_CSV = "docs/damaged_pages_review.csv"
+RESIDUE_CSV = "docs/residue_tokens_review.csv"
 
 # First printed page contained in each region's extract (see docs: verified against the
 # book's five part-title pages).
@@ -65,6 +67,95 @@ ARABIC_TOKEN_RE = re.compile(r"[ء-ٰٟـ]+")
 DAMAGE_TOKEN_LEN = 16
 DAMAGE_TOKEN_RATIO = 0.02
 
+# --- Displaced-diacritic repair ----------------------------------------------
+# The producer emits each vocalized word's diacritics as separate zero-width glyphs,
+# out of sequence relative to their base letters, so every extractor breaks the word:
+#     printed  "qlmk + kasra"   extracted  "qlm <space> kasra k"
+# Glyph geometry showed a mark's x0 coincides with its base letter's x0 to ~0.06pt, and
+# the base always FOLLOWS the mark. Where the mark is preceded by something that cannot
+# carry it (space, punctuation, line start) the attachment is unambiguous, so the repair
+# is a deterministic rewrite - no dictionary, no guessing.
+#
+# Deliberately NOT repaired: a mark already preceded by a letter or tatweel may be
+# correctly placed, and geometric ordering of cursive Arabic proved unreliable (a
+# geometry-driven extractor was built and validated against pdftotext -layout: it
+# transposes letters inside words, so it was rejected). Those marks stay as they are.
+LETTER_CLS = "ء-غف-ي"
+MARK_CLS = "ً-ٰٕۖ-ۭ"
+TATWEEL = "ـ"
+
+DETACHED_RE = re.compile(
+    r"(?P<pre>[" + LETTER_CLS + r"])[ ]+(?P<mk>[" + MARK_CLS + r"]+)(?P<base>[" + LETTER_CLS + r"])"
+)
+LEADING_MARK_RE = re.compile(
+    r"(?P<pre>^|[(){}\[\]«».,:؛،\-\"]|\n)"
+    r"(?P<mk>[" + MARK_CLS + r"]+)(?P<base>[" + LETTER_CLS + r"])",
+    re.M,
+)
+
+
+def repair_diacritics(text):
+    """Reattach unambiguously displaced marks. Returns (text, space_joins, mark_moves)."""
+    counts = {"join": 0, "move": 0}
+
+    def join(m):
+        counts["join"] += 1
+        return m.group("pre") + m.group("base") + m.group("mk")
+
+    def move(m):
+        counts["move"] += 1
+        return m.group("pre") + m.group("base") + m.group("mk")
+
+    prev, out = None, text
+    while prev != out:                      # marks can chain within one word
+        prev = out
+        out = DETACHED_RE.sub(join, out)
+    out = LEADING_MARK_RE.sub(move, out)
+    return out, counts["join"], counts["move"]
+
+
+def detached_mark_count(text):
+    """Marks with no valid base immediately before them (tatweel counts as a base)."""
+    mark = re.compile("[" + MARK_CLS + "]")
+    letter = re.compile("[" + LETTER_CLS + "]")
+    n = 0
+    for i, ch in enumerate(text):
+        if mark.match(ch):
+            p = text[i - 1] if i else ""
+            if not (letter.match(p) or mark.match(p) or p == TATWEEL):
+                n += 1
+    return n
+
+
+# Short tokens that survive the repair and are neither Arabic particles nor the
+# dictionary's own abbreviations. Logged for review, never auto-joined: a dictionary-
+# backed rejoin (arramooz + clitic stripping) was tested and produced false
+# confirmations, so this is a review list rather than a fix list.
+PARTICLES = set(("و في من ما لا ان "
+                 "أن إن ثم قد هو هي "
+                 "به له بك لك لم لن "
+                 "عن على إلى أو او "
+                 "يا ها اي أي كل مع "
+                 "بل هل كي إذ اذ "
+                 "لو").split())
+ABBREVIATIONS = set("ص ج د ع ح ش ق ط خ ض "
+                    "ف ك ل م ن ه ب ت ث ر "
+                    "ز س غ ي ا و ء".split())
+LETTER_ONLY_RE = re.compile("[" + LETTER_CLS + "]")
+
+
+def residue_tokens(text):
+    """(token, context) for <=2-letter tokens that look like fragments, not words."""
+    out = []
+    toks = text.split()
+    for i, t in enumerate(toks):
+        bare = "".join(LETTER_ONLY_RE.findall(t))
+        if not bare or len(bare) > 2 or bare in PARTICLES or bare in ABBREVIATIONS:
+            continue
+        out.append((t, " ".join(toks[max(0, i - 3):i + 4])[:120]))
+    return out
+
+
 
 def page_lines(page_text: str) -> list[str]:
     lines = [l.strip() for l in BIDI_RE.sub("", page_text).split("\n")]
@@ -84,7 +175,7 @@ def damage_score(lines: list[str]) -> tuple[float, str]:
     return len(bad) / len(toks), snippet.strip()[:160]
 
 
-def ingest_region(region: str, raw_path: str, first_page: int) -> tuple[dict, list[dict]]:
+def ingest_region(region: str, raw_path: str, first_page: int) -> tuple[dict, list[dict], list[dict]]:
     raw = io.open(raw_path, encoding="utf-8").read()
     pages = raw.split("\f")
     if pages and not pages[-1].strip():
@@ -92,7 +183,9 @@ def ingest_region(region: str, raw_path: str, first_page: int) -> tuple[dict, li
 
     kept_pages: list[str] = []
     damaged: list[dict] = []
-    kept_page_numbers: list[int] = []
+    residue: list[dict] = []
+    n_join = n_move = 0
+    detached_before = detached_after = 0
 
     for i, page in enumerate(pages):
         page_no = first_page + i
@@ -110,8 +203,26 @@ def ingest_region(region: str, raw_path: str, first_page: int) -> tuple[dict, li
                 "source_file": raw_path.replace("\\", "/"),
             })
             continue
-        kept_pages.append("\n".join(lines))
-        kept_page_numbers.append(page_no)
+
+        page_text = "\n".join(lines)
+        detached_before += detached_mark_count(page_text)
+        page_text, j, m = repair_diacritics(page_text)
+        n_join += j
+        n_move += m
+        detached_after += detached_mark_count(page_text)
+
+        # per-page so the review list carries a page number to look the token up on
+        for tok, ctx in residue_tokens(page_text):
+            residue.append({
+                "region": region,
+                "page": page_no,
+                "token": tok,
+                "context": ctx,
+                "action": "flagged_for_manual_review",
+                "note": "short fragment; no dictionary-safe rejoin available",
+            })
+
+        kept_pages.append(page_text)
 
     body = "\n\n".join(kept_pages)
     record = {
@@ -127,9 +238,18 @@ def ingest_region(region: str, raw_path: str, first_page: int) -> tuple[dict, li
         "pages_kept": len(kept_pages),
         "pages_excluded_damaged": len(damaged),
         "excluded_pages": [d["page"] for d in damaged],
+        "diacritic_repair": {
+            "space_joins": n_join,
+            "mark_moves": n_move,
+            "detached_marks_before": detached_before,
+            "detached_marks_after": detached_after,
+            "method": "deterministic reattachment of unambiguously displaced marks; "
+                      "ambiguous marks left untouched",
+        },
+        "residue_tokens_flagged": len(residue),
         "raw_text": body,
     }
-    return record, damaged
+    return record, damaged, residue
 
 
 def main() -> None:
@@ -137,9 +257,11 @@ def main() -> None:
     ap.add_argument("--raw-dir", default=RAW_DIR)
     ap.add_argument("--interim-dir", default=INTERIM_DIR)
     ap.add_argument("--review-csv", default=REVIEW_CSV)
+    ap.add_argument("--residue-csv", default=RESIDUE_CSV)
     args = ap.parse_args()
 
     all_damaged: list[dict] = []
+    all_residue: list[dict] = []
     summary = []
 
     for region, first_page in REGION_FIRST_PAGE.items():
@@ -148,8 +270,9 @@ def main() -> None:
             print(f"[ingest] MISSING {raw_path} - skipping {region}")
             continue
 
-        record, damaged = ingest_region(region, raw_path, first_page)
+        record, damaged, residue = ingest_region(region, raw_path, first_page)
         all_damaged.extend(damaged)
+        all_residue.extend(residue)
 
         out_dir = os.path.join(args.interim_dir, region)
         os.makedirs(out_dir, exist_ok=True)
@@ -158,9 +281,12 @@ def main() -> None:
             json.dump(record, f, ensure_ascii=False, indent=2)
 
         summary.append(record)
+        d = record["diacritic_repair"]
         print(f"[ingest] {region:<9} pages {record['pages_kept']:>4}/{record['pages_total']:<4} "
               f"(-{record['pages_excluded_damaged']} damaged)  "
-              f"{record['word_count']:>8,} words  -> {out_path}")
+              f"{record['word_count']:>8,} words | diacritics: {d['space_joins']:>5} joins, "
+              f"{d['mark_moves']:>4} moves, detached {d['detached_marks_before']:>5}"
+              f"->{d['detached_marks_after']:<5} | residue {record['residue_tokens_flagged']:>4}")
 
     os.makedirs(os.path.dirname(args.review_csv), exist_ok=True)
     with io.open(args.review_csv, "w", newline="", encoding="utf-8") as f:
@@ -169,12 +295,26 @@ def main() -> None:
         w.writeheader()
         w.writerows(sorted(all_damaged, key=lambda d: d["page"]))
 
+    with io.open(args.residue_csv, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=["region", "page", "token", "context",
+                                          "action", "note"])
+        w.writeheader()
+        w.writerows(sorted(all_residue, key=lambda d: (d["region"], d["page"])))
+
     tot_pages = sum(r["pages_total"] for r in summary)
     tot_kept = sum(r["pages_kept"] for r in summary)
     tot_words = sum(r["word_count"] for r in summary)
     print(f"\n[ingest] {len(summary)} regions | pages {tot_kept:,}/{tot_pages:,} kept "
           f"({len(all_damaged)} excluded as damaged) | {tot_words:,} usable words")
+    jb = sum(r["diacritic_repair"]["space_joins"] for r in summary)
+    mv = sum(r["diacritic_repair"]["mark_moves"] for r in summary)
+    db = sum(r["diacritic_repair"]["detached_marks_before"] for r in summary)
+    da = sum(r["diacritic_repair"]["detached_marks_after"] for r in summary)
+    print(f"[ingest] diacritic repair: {jb:,} space-joins + {mv:,} mark-moves | "
+          f"detached marks {db:,} -> {da:,} ({(db-da)/max(db,1)*100:.1f}% reattached)")
+    print(f"[ingest] {len(all_residue):,} residue tokens flagged for manual review")
     print(f"[ingest] damaged-page review file -> {args.review_csv}")
+    print(f"[ingest] residue review file      -> {args.residue_csv}")
 
 
 if __name__ == "__main__":

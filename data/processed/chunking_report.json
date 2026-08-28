@@ -11,9 +11,11 @@
   },
   "documents_chunked": 5,
   "documents_skipped": [],
-  "total_chunks": 346,
-  "total_tokens": 259497,
-  "chunk_flag_counts": {},
+  "total_chunks": 337,
+  "total_tokens": 252802,
+  "chunk_flag_counts": {
+    "below_target_min": 2
+  },
   "per_document": [
     {
       "doc_id": "dialect_dict_eastern",
@@ -22,7 +24,7 @@
       "unit_type": "entry_headword",
       "units": 872,
       "chunks": 30,
-      "tokens": 22556
+      "tokens": 22007
     },
     {
       "doc_id": "dialect_dict_najdi",
@@ -30,8 +32,8 @@
       "title": "معجم اللهجات المحكية في المملكة العربية السعودية - najdi",
       "unit_type": "entry_headword",
       "units": 2159,
-      "chunks": 135,
-      "tokens": 100133
+      "chunks": 130,
+      "tokens": 97703
     },
     {
       "doc_id": "dialect_dict_northern",
@@ -39,8 +41,8 @@
       "title": "معجم اللهجات المحكية في المملكة العربية السعودية - northern",
       "unit_type": "entry_headword",
       "units": 1192,
-      "chunks": 51,
-      "tokens": 38615
+      "chunks": 49,
+      "tokens": 37574
     },
     {
       "doc_id": "dialect_dict_southern",
@@ -48,8 +50,8 @@
       "title": "معجم اللهجات المحكية في المملكة العربية السعودية - southern",
       "unit_type": "entry_headword",
       "units": 2830,
-      "chunks": 105,
-      "tokens": 79767
+      "chunks": 103,
+      "tokens": 77439
     },
     {
       "doc_id": "dialect_dict_western",
@@ -58,7 +60,7 @@
       "unit_type": "entry_headword",
       "units": 791,
       "chunks": 25,
-      "tokens": 18426
+      "tokens": 18079
     }
   ],
   "output": "data/processed/chunks.jsonl"

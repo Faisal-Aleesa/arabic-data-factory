@@ -26,36 +26,36 @@
     {
       "doc_id": "dialect_dict_eastern",
       "region": "eastern",
-      "sha256": "b4a000b55a18df36c4da654383809d3028e3a7e21c28f4ee9a00da528da7dd4b",
-      "shingle_count": 22219,
+      "sha256": "a50af3f3f1483c20a285389a6e630f93ba58642d3c8878cbf78ad450b6a139db",
+      "shingle_count": 21668,
       "status": "unique"
     },
     {
       "doc_id": "dialect_dict_najdi",
       "region": "najdi",
-      "sha256": "b34695914b3961faab2be2e2ad74641256b9ad59212d4141fc0cbe0833516ea2",
-      "shingle_count": 98700,
+      "sha256": "d08438ea5d8c32a69e7ffeb8479739a5600b04c6f64a3dd6e98ac0c04394c37a",
+      "shingle_count": 96301,
       "status": "unique"
     },
     {
       "doc_id": "dialect_dict_northern",
       "region": "northern",
-      "sha256": "3417fa147c60aeb0e5e99f7338b730c553c0104fa726df41df06dccd5f3eafdc",
-      "shingle_count": 37971,
+      "sha256": "0f6b22b62614d12816800eb391ef2e771c0226503a62848f3bd3d9bf4b8def60",
+      "shingle_count": 36942,
       "status": "unique"
     },
     {
       "doc_id": "dialect_dict_southern",
       "region": "southern",
-      "sha256": "cc16493b9b101873d62d3b53ab585a37246f1b4bd16fd91380b13fef8ae31053",
-      "shingle_count": 77644,
+      "sha256": "a8b66b75b27d44f87dbccf0261a22d117523b831820be05a7fd64f46971436c4",
+      "shingle_count": 75396,
       "status": "unique"
     },
     {
       "doc_id": "dialect_dict_western",
       "region": "western",
-      "sha256": "3accfce38af8434d80392d9902209e30dfdfe59d9afaf199c6313b350ef64fc9",
-      "shingle_count": 18324,
+      "sha256": "dd4ac23a02abd34c627a5eb75651fc8791b07bce2048b01e03e868d71ffcdd55",
+      "shingle_count": 17977,
       "status": "unique"
     }
   ]

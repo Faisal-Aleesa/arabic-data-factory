@@ -3,8 +3,8 @@
 - **Source corpus:** provided directly by the team, not from a public repo | **License:** unverified_pending_review
 - **Documents in:** 5
 - **Source format:** `dictionary` (explicit per batch; clean.py and chunk.py must agree)
-- **Chunks out:** 346
-- **Total tokens:** 259,497 (*whitespace_word_count* approximation)
+- **Chunks out:** 337
+- **Total tokens:** 252,802 (*whitespace_word_count* approximation)
 - **Pipeline:** `clean.py` -> `dedup.py` -> `chunk.py` -> `eda.py` (fully deterministic, no LLM calls)
 - **Text variant chunked:** `original` - orthography preserved; normalization was used for matching/dedup only.
 
@@ -14,30 +14,30 @@
 
 | statistic | tokens |
 | --- | ---: |
-| min | 210 |
-| p25 | 746 |
-| median (p50) | 778 |
+| min | 170 |
+| p25 | 751 |
+| median (p50) | 782 |
 | p75 | 793 |
 | p90 | 798 |
 | max | 800 |
-| mean | 750.0 |
+| mean | 750.2 |
 
-**346 / 346 chunks (100.0%) fall inside the 200-800 token target band.**
+**335 / 337 chunks (99.4%) fall inside the 200-800 token target band.**
 
 ```
 tokens/chunk        | histogram                                     count
-   210-   259 |                                                   2
-   259-   308 |                                                   1
-   308-   358 |                                                   0
-   358-   407 |                                                   0
-   407-   456 | #                                                 3
-   456-   505 |                                                   2
-   505-   554 | #                                                 5
-   554-   603 | #                                                 7
-   603-   652 | ##                                                9
-   652-   702 | ###                                              17
-   702-   751 | #######                                          42
-   751-   800 | ##############################################  258
+   170-   222 | #                                                 3
+   222-   275 |                                                   1
+   275-   328 |                                                   0
+   328-   380 |                                                   1
+   380-   432 |                                                   0
+   432-   485 | #                                                 5
+   485-   538 |                                                   1
+   538-   590 | #                                                 7
+   590-   642 | ##                                               11
+   642-   695 | #                                                 5
+   695-   748 | ########                                         43
+   748-   800 | ##############################################  260
 ```
 
 ![Token distribution](token_histogram_saudi_dialect.png)
@@ -46,18 +46,18 @@ tokens/chunk        | histogram                                     count
 
 | region | docs | chunks | share | tokens | median tokens |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| najdi | 1 | 135 | 39.0% | 100,133 | 768 |
-| southern | 1 | 105 | 30.3% | 79,767 | 781 |
-| northern | 1 | 51 | 14.7% | 38,615 | 781 |
-| eastern | 1 | 30 | 8.7% | 22,556 | 782 |
-| western | 1 | 25 | 7.2% | 18,426 | 792 |
-| **total** | 5 | **346** | 100.0% | **259,497** | 778 |
+| najdi | 1 | 130 | 38.6% | 97,703 | 772 |
+| southern | 1 | 103 | 30.6% | 77,439 | 783 |
+| northern | 1 | 49 | 14.5% | 37,574 | 787 |
+| eastern | 1 | 30 | 8.9% | 22,007 | 793 |
+| western | 1 | 25 | 7.4% | 18,079 | 782 |
+| **total** | 5 | **337** | 100.0% | **252,802** | 782 |
 
 ### ⚠ Under-resourced regions - priority for additional sourcing
 
 | region | tokens | vs. median region | vs. largest region |
 | --- | ---: | ---: | ---: |
-| western | 18,426 | 48% | 18% |
+| western | 18,079 | 48% | 19% |
 
 **western** falls below 50% of the median regional token count. Additional sourcing here would do more for regional balance than more volume anywhere else in the corpus.
 
@@ -65,21 +65,21 @@ tokens/chunk        | histogram                                     count
 
 | doc_id | region | unit type | units | chunks | tokens |
 | --- | --- | --- | ---: | ---: | ---: |
-| dialect_dict_eastern | eastern | entry_headword | 872 | 30 | 22,556 |
-| dialect_dict_najdi | najdi | entry_headword | 2,159 | 135 | 100,133 |
-| dialect_dict_northern | northern | entry_headword | 1,192 | 51 | 38,615 |
-| dialect_dict_southern | southern | entry_headword | 2,830 | 105 | 79,767 |
-| dialect_dict_western | western | entry_headword | 791 | 25 | 18,426 |
+| dialect_dict_eastern | eastern | entry_headword | 872 | 30 | 22,007 |
+| dialect_dict_najdi | najdi | entry_headword | 2,159 | 130 | 97,703 |
+| dialect_dict_northern | northern | entry_headword | 1,192 | 49 | 37,574 |
+| dialect_dict_southern | southern | entry_headword | 2,830 | 103 | 77,439 |
+| dialect_dict_western | western | entry_headword | 791 | 25 | 18,079 |
 
 ### format_type distribution
 
 | format_type | chunks | share |
 | --- | ---: | ---: |
-| dictionary_entry | 346 | 100.0% |
+| dictionary_entry | 337 | 100.0% |
 
 ## 3. Cleaning stage and items flagged for review
 
-- Characters in: **1,589,826** -> retained: **1,537,432** (**3.30%** removed overall)
+- Characters in: **1,582,113** -> retained: **1,530,737** (**3.25%** removed overall)
 - Flag threshold: a document is flagged when cleaning removes more than **30%** of its characters
 - Diacritic stripping: **OFF** (default off - two children's books in this batch are fully vocalized)
 
@@ -87,11 +87,11 @@ Largest character deltas:
 
 | doc_id | region | chars in | chars retained | % removed | flags |
 | --- | --- | ---: | ---: | ---: | --- |
-| dialect_dict_northern | northern | 238,188 | 227,638 | 4.43% | - |
-| dialect_dict_najdi | najdi | 614,548 | 593,174 | 3.48% | - |
-| dialect_dict_southern | southern | 484,268 | 470,105 | 2.92% | - |
-| dialect_dict_eastern | eastern | 138,741 | 135,057 | 2.66% | - |
-| dialect_dict_western | western | 114,081 | 111,458 | 2.30% | - |
+| dialect_dict_northern | northern | 237,028 | 226,597 | 4.40% | - |
+| dialect_dict_najdi | najdi | 611,720 | 590,744 | 3.43% | - |
+| dialect_dict_southern | southern | 481,462 | 467,777 | 2.84% | - |
+| dialect_dict_eastern | eastern | 138,178 | 134,508 | 2.66% | - |
+| dialect_dict_western | western | 113,725 | 111,111 | 2.30% | - |
 
 ### Documents flagged during cleaning: **0**
 
@@ -99,7 +99,14 @@ None.
 
 ### Chunks flagged
 
-None.
+| flag | chunks | meaning |
+| --- | ---: | --- |
+| below_target_min | 2 | below 200 tokens - end-of-document tail, kept |
+
+| chunk_id | region | tokens | units | flags |
+| --- | --- | ---: | ---: | --- |
+| dialect_dict_eastern_c0029 | eastern | 170 | 5 | below_target_min |
+| dialect_dict_western_c0016 | western | 191 | 14 | below_target_min |
 
 ## 4. Deduplication
 

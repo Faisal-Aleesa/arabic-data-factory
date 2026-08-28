@@ -238,3 +238,6 @@ data/processed/chunks.jsonl
 
 # Local-only EDA build that reproduces source excerpts (see eda.py --no-examples)
 data/eda/*_with_examples.md
+
+# Residue review log: its context column quotes readable source text
+docs/residue_tokens_review.csv
