@@ -26,6 +26,22 @@ happen while they are still visible:
     extraction approach.
 
 Nothing is deleted: excluded pages stay in data/raw/ and are enumerated in the CSV.
+
+شرح بالعربية
+------------
+مرحلة الاقتناء: تحويل النص المستخرج من الكتاب إلى وثيقة لكل منطقة، بصيغة تقرأها
+مرحلة التنظيف. ليست مرحلة معالجة رابعة؛ مراحل التنظيف وكشف التكرار والتقطيع لم تتغير
+وما زالت تبدأ من data/interim/.
+
+لماذا توجد مرحلة تعي حدود الصفحات أصلًا؟ لأن حدود الصفحات لا تنجو إلا في النص الخام
+(بفواصل \f)، وأمران يجب أن يُنجزا قبل أن تختفي:
+  * ترقيم الصفحات المطبوع، الذي سيقع داخل مدخل معجمي لو تُرك.
+  * الصفحات التالفة، وهي أقلية رسم فيها الملف الأصلي نصوصًا متراكبة يستخرجها البرنامج
+    حروفًا متشابكة غير مقروءة. تُستبعد هذه الصفحات من متن الوثيقة وتُسجَّل بأرقامها
+    ومقتطف منها. لا تُحاوَل أي معالجة تلقائية لها؛ ملف المراجعة هو المدخل لإعادة
+    استخراجها لاحقًا بطريقة أخرى.
+
+لا يُحذف شيء: الصفحات المستبعدة تبقى في data/raw/ ومُحصاة في ملف المراجعة.
 """
 
 from __future__ import annotations
@@ -64,6 +80,9 @@ ARABIC_TOKEN_RE = re.compile(r"[ء-ٰٟـ]+")
 # Damage detector. Arabic words top out around 12-13 letters; interleaved text runs
 # produce far longer pseudo-tokens. A page is held back when more than
 # DAMAGE_TOKEN_RATIO of its Arabic tokens exceed DAMAGE_TOKEN_LEN characters.
+# كاشف التلف: الكلمة العربية لا تكاد تتجاوز اثني عشر أو ثلاثة عشر حرفًا، أما النصوص
+# المتراكبة فتنتج كلمات وهمية أطول من ذلك بكثير. تُستبعد الصفحة إذا تجاوزت نسبة هذه
+# الكلمات الحدَّ المحدد.
 DAMAGE_TOKEN_LEN = 16
 DAMAGE_TOKEN_RATIO = 0.02
 
@@ -80,6 +99,24 @@ DAMAGE_TOKEN_RATIO = 0.02
 # correctly placed, and geometric ordering of cursive Arabic proved unreliable (a
 # geometry-driven extractor was built and validated against pdftotext -layout: it
 # transposes letters inside words, so it was rejected). Those marks stay as they are.
+# إصلاح التشكيل المُزاح — الخلفية بالعربية:
+# البرنامج المنتِج للملف يرسم حركات كل كلمة مشكولة كرموز مستقلة عديمة العرض، ويضعها
+# في ترتيب لا يطابق ترتيب حروفها. لذلك يكسر كل برنامج استخراج الكلمةَ عند هذا الموضع:
+# ما يُطبع كلمة واحدة مشكولة يخرج نصًا ككلمتين بينهما مسافة، والحركة معلقة بلا حرف.
+#
+# فحص هندسة الرموز في الملف أظهر أن الإحداثي الأفقي لكل حركة يطابق إحداثي حرفها
+# الأساس بفارق لا يتجاوز 0.06 نقطة، وأن الحرف الأساس يأتي دائمًا بعد الحركة. ومن ثم:
+# إذا سبق الحركةَ شيء لا يصلح أن يحملها (مسافة أو علامة ترقيم أو بداية سطر) فإسنادها
+# إلى الحرف التالي قطعي لا تخمين فيه، وهذا ما تفعله repair_diacritics.
+#
+# ما لا يُصلَح عمدًا: الحركة المسبوقة بحرف أو بتطويل قد تكون في موضعها الصحيح أصلًا،
+# ولا سبيل نصيًّا للتمييز.
+#
+# تجربة مرفوضة (١): بُني مستخرِج قائم على هندسة الرموز ليحل محل pdftotext، وقُيس
+# مخرجه سطرًا بسطر مقابل pdftotext -layout فلم يطابقه إلا في نحو 10% من السطور، لأنه
+# يقلب ترتيب الحروف داخل الكلمة (تخرج "في" مثلًا "يف"). السبب أن صناديق الحروف في
+# الخط العربي المتصل تتراكب، فترتيبها بالإحداثيات غير موثوق. رُفض المستخرِج وبقي
+# pdftotext -layout. لا تُعَد التجربة مرة أخرى دون معالجة هذه النقطة.
 LETTER_CLS = "ء-غف-ي"
 MARK_CLS = "ً-ٰٕۖ-ۭ"
 TATWEEL = "ـ"
@@ -96,6 +133,9 @@ LEADING_MARK_RE = re.compile(
 
 def repair_diacritics(text):
     """Reattach unambiguously displaced marks. Returns (text, space_joins, mark_moves)."""
+    # إعادة إسناد الحركات المُزاحة في الحالات القطعية وحدها: تُحذف المسافة الدخيلة
+    # وتُنقل الحركة إلى ما بعد حرفها الأساس. تُكرَّر العملية لأن حركات عدة قد تتوالى
+    # في الكلمة الواحدة.
     counts = {"join": 0, "move": 0}
 
     def join(m):
@@ -116,6 +156,8 @@ def repair_diacritics(text):
 
 def detached_mark_count(text):
     """Marks with no valid base immediately before them (tatweel counts as a base)."""
+    # عدّ الحركات غير المسندة، لقياس أثر الإصلاح قبله وبعده. التطويل يُعد حاملًا
+    # مشروعًا للحركة فلا يُحسب ضمنها.
     mark = re.compile("[" + MARK_CLS + "]")
     letter = re.compile("[" + LETTER_CLS + "]")
     n = 0
@@ -131,6 +173,18 @@ def detached_mark_count(text):
 # dictionary's own abbreviations. Logged for review, never auto-joined: a dictionary-
 # backed rejoin (arramooz + clitic stripping) was tested and produced false
 # confirmations, so this is a review list rather than a fix list.
+# بقايا الكلمات القصيرة — الخلفية بالعربية:
+# بعد إصلاح التشكيل تبقى كلمات من حرف أو حرفين ليست أدوات عربية معروفة ولا اختصارات
+# معجمية (مثل ص للصفحة، وج للجمع). بعضها شظايا كلمات انقسمت فعلًا، وبعضها كلمات سليمة.
+#
+# تجربة مرفوضة (٢): جُرِّب وصلها آليًا بالتحقق من الشكل الموصول في معجم عربي حقيقي
+# (arramooz مع تقشير السوابق واللواحق). أنتج الأسلوب تأكيدات كاذبة: يقبل وصل كلمتين
+# سليمتين في كلمة لا وجود لها، لأن تقشير السوابق واللواحق متساهل بما يكفي لإيجاد
+# جذر لأي تركيب تقريبًا. كما جُرِّب استعمال التطويل في آخر الشظية دليلًا على الانقسام،
+# فتبيّن أن التطويل في هذا المصدر زخرفي داخل كلمات تامة، فسقط الدليل.
+#
+# لذلك: تُسجَّل هذه البقايا في ملف مراجعة بأرقام صفحاتها وسياقها، ولا تُوصل آليًا.
+# القاعدة المتبعة أن يُعلَّم الملتبس للمراجعة اليدوية لا أن يُخمَّن.
 PARTICLES = set(("و في من ما لا ان "
                  "أن إن ثم قد هو هي "
                  "به له بك لك لم لن "
@@ -146,6 +200,8 @@ LETTER_ONLY_RE = re.compile("[" + LETTER_CLS + "]")
 
 def residue_tokens(text):
     """(token, context) for <=2-letter tokens that look like fragments, not words."""
+    # استخراج البقايا مع سياقها لملف المراجعة. القائمة متساهلة عمدًا: قد تدخل فيها
+    # كلمات سليمة، وهذا أفضل من إغفال شظية حقيقية في قائمة يراجعها إنسان.
     out = []
     toks = text.split()
     for i, t in enumerate(toks):
@@ -158,12 +214,14 @@ def residue_tokens(text):
 
 
 def page_lines(page_text: str) -> list[str]:
+    # سطور الصفحة بعد حذف علامات اتجاه النص وسطر ترقيم الصفحة المطبوع.
     lines = [l.strip() for l in BIDI_RE.sub("", page_text).split("\n")]
     return [l for l in lines if l and not FOLIO_RE.match(l)]
 
 
 def damage_score(lines: list[str]) -> tuple[float, str]:
     """(ratio of over-long Arabic tokens, worst snippet)."""
+    # درجة التلف: نسبة الكلمات المفرطة الطول، مع أسوأ مقتطف يوضح المشكلة في التقرير.
     toks = [t for l in lines for t in ARABIC_TOKEN_RE.findall(l)]
     if not toks:
         return 0.0, ""
@@ -176,6 +234,9 @@ def damage_score(lines: list[str]) -> tuple[float, str]:
 
 
 def ingest_region(region: str, raw_path: str, first_page: int) -> tuple[dict, list[dict], list[dict]]:
+    # اقتناء منطقة واحدة: تقسيم النص إلى صفحات، ثم لكل صفحة حذف الترقيم المطبوع،
+    # وفحص التلف واستبعاد التالف، وإصلاح التشكيل، وجمع البقايا. ثم تُركَّب الصفحات
+    # المُبقاة في متن واحد ويُبنى سجل الوثيقة بإحصاءاته.
     raw = io.open(raw_path, encoding="utf-8").read()
     pages = raw.split("\f")
     if pages and not pages[-1].strip():
@@ -254,6 +315,8 @@ def ingest_region(region: str, raw_path: str, first_page: int) -> tuple[dict, li
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Acquisition: dialect dictionary -> interim JSON.")
+    # واجهة سطر الأوامر: يمر على مناطق REGION_FIRST_PAGE، ويكتب وثيقة لكل منطقة،
+    # وملفَّي مراجعة: الصفحات التالفة، وبقايا الكلمات القصيرة.
     ap.add_argument("--raw-dir", default=RAW_DIR)
     ap.add_argument("--interim-dir", default=INTERIM_DIR)
     ap.add_argument("--review-csv", default=REVIEW_CSV)

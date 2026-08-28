@@ -34,6 +34,22 @@ Pipeline per document
      The delta is measured against the orthography-preserving text (+ the detached
      header), i.e. what actually ships downstream in chunks.jsonl; the folded body
      length is reported separately as `char_count_folded_body`.
+
+شرح بالعربية
+------------
+المرحلة الأولى: التنظيف. معالجة حتمية بالكامل للوثائق المصدرية، بلا أي استدعاء لنموذج
+لغوي. المبدأ الحاكم أن الاختلاف الإملائي بين اللهجات هو الإشارة المطلوب حفظها، ولذلك
+لا يُصحَّح النص المُسلَّم أبدًا.
+
+تُحفَظ نسختان من كل وثيقة:
+  * paragraphs_original — النص الذي يُسلَّم فعليًا إلى chunks.jsonl، بإملائه كما ورد
+    (أ/إ/آ و ى دون توحيد، والتطويل باقٍ ما لم يُمرَّر --strip-tatweel).
+  * paragraphs — مفتاح المطابقة فقط، بعد توحيد الألف والياء وحذف التطويل. يُستخدم
+    حصريًا داخل dedup.py لحساب SHA-256 و MinHash، ولا يُسلَّم إطلاقًا.
+
+الخطوات: إصلاح الترميز عبر ftfy، ثم تقسيم النص إلى وحدات حسب --format، ثم فصل مقدمة
+الكتاب وحفظها كبيانات وصفية بدل إهمالها، ثم التطبيع بنسختيه، ثم قياس فارق عدد الحروف
+قبل وبعد ووضع علامة مراجعة يدوية عند فقد يتجاوز 30%. لا يُحذف أي محتوى بصمت.
 """
 
 from __future__ import annotations
@@ -49,10 +65,12 @@ import ftfy
 from pyarabic import araby
 
 # --- Paths -------------------------------------------------------------------
+# المسارات: مجلد الإدخال/الإخراج وملف تقرير التنظيف.
 INTERIM_DIR = "data/interim"
 REPORT_PATH = "data/processed/cleaning_report.json"
 
 # --- Cleaning parameters -----------------------------------------------------
+# معاملات التنظيف: فاصل الفقرات، وعتبة الإبلاغ عن فقد الحروف، وسقف عدد فقرات المقدمة.
 PARAGRAPH_SEPARATOR = "\n\n"      # blank line between blocks
 CHAR_LOSS_FLAG_THRESHOLD = 0.30   # flag doc for manual review above this loss
 MAX_HEADER_PARAGRAPHS = 12        # safety cap so we never eat real prose
@@ -125,8 +143,12 @@ NORMALIZE_TABLE = str.maketrans({**ALEF_VARIANTS, **YA_VARIANTS})
 
 
 # --- Text helpers ------------------------------------------------------------
+# دوال مساعدة على مستوى النص: تنظيف المسافات، ونسختا التطبيع (مفتاح المطابقة
+# مقابل النص المُسلَّم)، وعدّ الكلمات.
 def normalize_whitespace(text: str) -> str:
     """NBSP/zero-width cleanup, collapse runs of spaces, keep newlines meaningful."""
+    # توحيد المسافات: حذف المسافة غير الفاصلة والمحارف عديمة العرض وعلامات اتجاه
+    # النص، ودمج المسافات المتكررة، مع الإبقاء على فواصل الأسطر لأنها تحمل معنى.
     text = text.replace(" ", " ")                    # NBSP
     text = re.sub(r"[​-‏‪-‮﻿]", "", text)  # zero-width / bidi marks
     text = text.replace("\r\n", "\n").replace("\r", "\n")
@@ -137,6 +159,8 @@ def normalize_whitespace(text: str) -> str:
 
 def normalize_arabic(text: str, strip_diacritics: bool = False) -> str:
     """Folded MATCHING KEY only - never shipped. Alef/ya folded, tatweel always stripped."""
+    # نسخة المطابقة فقط: توحيد الألف والياء وحذف التطويل. عملية فاقدة للمعلومة
+    # (نشأة تصير نشاة)، ولذلك تُستخدم للمقارنة داخل dedup.py ولا تُسلَّم أبدًا.
     text = unicodedata.normalize("NFC", text)
     text = araby.strip_tatweel(text)
     text = text.translate(NORMALIZE_TABLE)
@@ -148,6 +172,8 @@ def normalize_arabic(text: str, strip_diacritics: bool = False) -> str:
 def preserve_orthography(text: str, strip_diacritics: bool = False,
                          strip_tatweel: bool = False) -> str:
     """Shipped text. Alef/ya spelling is left exactly as written; tatweel only on request."""
+    # النص المُسلَّم: يُترك الإملاء كما ورد في المصدر. لا توحيد للألف أو الياء،
+    # ولا حذف للتطويل إلا بطلب صريح، لأن هذا الاختلاف هو مادة الدراسة نفسها.
     text = unicodedata.normalize("NFC", text)
     if strip_tatweel:
         text = araby.strip_tatweel(text)
@@ -157,6 +183,7 @@ def preserve_orthography(text: str, strip_diacritics: bool = False,
 
 
 def word_count(text: str) -> int:
+    # عدّ تقريبي للكلمات بالفواصل البيضاء، يُستخدم في إحصاءات التقرير.
     return len(text.split())
 
 
@@ -165,8 +192,13 @@ def word_count(text: str) -> int:
 # allowed to treat as indivisible: a prose paragraph, a whole glossary entry, a whole
 # stanza. Splitting rules differ per source type, and getting this wrong upstream is
 # invisible downstream - a glossary segmented as prose becomes one giant blob.
+# التقسيم: كل دالة تُعيد (units, unit_type). الوحدة هي أصغر جزء لا يجوز لمرحلة
+# التقطيع أن تشطره: فقرة نثرية، أو مدخل معجمي كامل، أو مقطع شعري كامل. قواعد
+# التقسيم تختلف باختلاف نوع المصدر، وخطأ هنا لا يظهر لاحقًا: معجم قُسِّم كنثر
+# يتحول إلى كتلة واحدة ضخمة.
 def segment_prose(text: str) -> tuple[list[str], str]:
     """Blank-line separated paragraphs; single newlines stay inside a paragraph."""
+    # نثر: الفقرة تنتهي بسطر فارغ. فاصل السطر المفرد يبقى داخل الفقرة نفسها.
     return [p.strip() for p in text.split(PARAGRAPH_SEPARATOR) if p.strip()], "paragraph"
 
 
@@ -176,6 +208,9 @@ def segment_verse(text: str) -> tuple[list[str], str]:
     A poem written without blank lines has no stanza structure to recover, so each line
     becomes its own unit rather than silently gluing the whole poem into one blob.
     """
+    # شِعر: الوحدة هي المقطع المفصول بسطر فارغ، مع حفظ فواصل الأسطر داخله. وإذا خلت
+    # القصيدة من الأسطر الفارغة فلا بنية مقاطع يمكن استرجاعها، فيصير كل سطر وحدة
+    # مستقلة بدل لصق القصيدة كلها في كتلة واحدة.
     blocks = [b.strip() for b in text.split(PARAGRAPH_SEPARATOR) if b.strip()]
     if len(blocks) > 1:
         return blocks, "stanza"
@@ -204,6 +239,16 @@ def segment_dictionary(text: str) -> tuple[list[str], str]:
     Text preceding the first headword (a section's prose introduction) is not forced
     into the first entry: it is split on blank lines so it stays independently packable.
     """
+    # معجم: الوحدة هي المدخل الواحد (المدخل + شرحه + أمثلته). ثلاث اصطلاحات مدعومة
+    # وتُجرَّب بهذا الترتيب:
+    #   1. entry_headword — المدخل يبدأ بكلمة بين قوسين تليها نقطتان، ويمتد شرحه على
+    #      أي عدد من الأسطر حتى يبدأ المدخل التالي. لا الأسطر الفارغة ولا فواصل
+    #      الأسطر تفصل المداخل، وهذا هو اصطلاح المصدر الحالي. تقسيم مثل هذا المصدر
+    #      بالأسطر الفارغة ينتج كتلًا بحجم الصفحة، وتقسيمه بفواصل الأسطر يمزّق كل شرح.
+    #   2. entry_block — مداخل يفصل بينها سطر فارغ.
+    #   3. entry_line — مدخل واحد في كل سطر، حين يخلو الملف من الأسطر الفارغة.
+    # أما النص السابق لأول مدخل (مقدمة القسم) فيُقسَّم بالأسطر الفارغة حتى لا يُلحَق
+    # بالمدخل الأول ويصير وحدة ضخمة.
     matches = list(HEADWORD_RE.finditer(text))
     if len(matches) >= MIN_HEADWORDS_FOR_ENTRY_SPLIT:
         starts = {m.start() for m in matches}
@@ -252,8 +297,12 @@ SEGMENTERS = {
 
 
 # --- Header (front-matter) extraction ----------------------------------------
+# فصل مقدمة الكتاب: العنوان وأسماء المؤلف/المترجم/المراجع تُنزع من متن النص
+# وتُحفظ كحقول وصفية مستقلة، لا تُحذف.
 def _titles_match(paragraph: str, title: str) -> bool:
     """Loose comparison so a diacritized/normalized repeat of the title still matches."""
+    # مقارنة متساهلة للعناوين: تتجاهل التشكيل والتطويل وتوحّد الألف والياء، حتى
+    # يُتعرَّف على تكرار العنوان في الصفحات الأولى ولو اختلف ضبطه.
     def key(s: str) -> str:
         s = araby.strip_tashkeel(araby.strip_tatweel(s))
         s = s.translate(NORMALIZE_TABLE)
@@ -275,6 +324,9 @@ def extract_header(paragraphs: list[str], title: str) -> tuple[dict, list[str], 
     short line appearing before the first role block (subtitle). Scanning stops at the
     first paragraph that fails all three tests.
     """
+    # فصل المقدمة: تُعد الفقرة جزءًا من المقدمة إذا كانت كتلة دور (تأليف/ترجمة/مراجعة)،
+    # أو تكرارًا للعنوان، أو سطرًا قصيرًا سابقًا لأول كتلة دور (عنوان فرعي). يتوقف
+    # المسح عند أول فقرة تفشل في الاختبارات الثلاثة، وتُحفظ الأسماء في حقول مستقلة.
     roles: dict[str, list[str]] = {}
     header: list[str] = []
     seen_role = False
@@ -324,6 +376,7 @@ def extract_header(paragraphs: list[str], title: str) -> tuple[dict, list[str], 
 
 
 # --- Per-document cleaning ---------------------------------------------------
+# التنظيف على مستوى الوثيقة الواحدة: يجمع كل الخطوات السابقة ويُخرج السجل النهائي.
 def clean_document(record: dict, strip_diacritics: bool = False, fmt: str = "prose",
                    strip_tatweel: bool = False) -> dict:
     raw_text = record["raw_text"]
@@ -445,6 +498,8 @@ def clean_document(record: dict, strip_diacritics: bool = False, fmt: str = "pro
 
 
 # --- Runner ------------------------------------------------------------------
+# المشغِّل: يمر على كل ملفات الإدخال، ويكتب نسخة _cleaned.json لكل وثيقة،
+# ثم تقرير تنظيف مجمَّع.
 def iter_input_files(interim_dir: str) -> list[str]:
     return sorted(
         p for p in glob.glob(os.path.join(interim_dir, "*", "*.json"))

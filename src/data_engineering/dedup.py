@@ -14,6 +14,23 @@ Two passes:
 
 Near-duplicates are FLAGGED, not removed - the standing rule is "never discard
 automatically". Only byte-identical documents are excluded from chunking.
+
+شرح بالعربية
+------------
+المرحلة الثانية: كشف التكرار على مستوى الوثيقة، بمرحلتين:
+  1. التطابق التام — بصمة SHA-256 على النص بعد ضغط المسافات. تُبقى أول وثيقة في كل
+     مجموعة متطابقة، وتُعلَّم البقية exact_duplicate وتتخطاها مرحلة التقطيع.
+  2. التقارب — MinHash مع LSH على مقاطع من خمس كلمات و128 تبديلة، وعتبة Jaccard
+     تساوي 0.8. أزواج المرشحين الخارجة من LSH يُعاد فحصها بحساب Jaccard الحقيقي على
+     مجموعات المقاطع، لاستبعاد الإيجابيات الكاذبة.
+
+المتقاربات تُعلَّم للمراجعة ولا تُحذف؛ القاعدة الثابتة ألا يُحذف شيء تلقائيًا. المستبعد
+من التقطيع هو المتطابق حرفيًا فقط.
+
+ملاحظة مهمة: هذه المرحلة وحدها هي التي تستعمل النسخة الموحَّدة (cleaned_text) التي
+وحَّدت الألف والياء وحذفت التطويل. سبب ذلك أن التوحيد يفيد المطابقة لأنه يقرّب الصور
+الإملائية المختلفة لكلمة واحدة، لكنه يُفسد النص التدريبي لأنه يمحو الاختلاف اللهجي
+المطلوب. لذلك يبقى محصورًا هنا ولا يصل إلى chunks.jsonl.
 """
 
 from __future__ import annotations
@@ -40,15 +57,21 @@ DEFAULT_THRESHOLD = 0.8
 # built at a LOOSER threshold and used purely as a candidate generator - every candidate
 # is still confirmed against the true Jaccard at DEFAULT_THRESHOLD, so recall improves
 # without admitting a single false positive.
+# ملاحظة عن العتبة: تقسيم LSH إلى نطاقات عملية احتمالية، والزوج الذي تقترب نسبته من
+# عتبة الفهرسة قد لا يظهر أصلًا كمرشَّح. لذلك يُبنى الفهرس عند عتبة أوسع (0.6) ويُستعمل
+# كمولّد مرشحين فقط، ثم يُحسم القرار بحساب Jaccard الحقيقي عند 0.8. النتيجة تحسّن في
+# الاسترجاع دون أي إيجابية كاذبة إضافية. اكتُشف هذا الخلل عبر self_test أدناه.
 LSH_THRESHOLD_MARGIN = 0.2
 MIN_LSH_THRESHOLD = 0.3
 
 
 def lsh_threshold_for(threshold: float) -> float:
+    # يحسب عتبة الفهرسة الأوسع من عتبة القرار، مع حدّ أدنى لا ينزل تحته.
     return round(max(MIN_LSH_THRESHOLD, threshold - LSH_THRESHOLD_MARGIN), 4)
 
 
 def load_cleaned_docs(interim_dir: str) -> list[dict]:
+    # يقرأ كل ملفات _cleaned.json الناتجة عن المرحلة الأولى.
     docs = []
     for path in sorted(glob.glob(os.path.join(interim_dir, "*", "*_cleaned.json"))):
         with open(path, encoding="utf-8") as f:
@@ -60,14 +83,17 @@ def load_cleaned_docs(interim_dir: str) -> list[dict]:
 
 def canonical_text(text: str) -> str:
     """Whitespace-collapsed form used for hashing (text is already Arabic-normalized)."""
+    # صورة موحَّدة المسافات تُستعمل أساسًا للبصمة، فلا يؤثر اختلاف المسافات في المقارنة.
     return re.sub(r"\s+", " ", text).strip()
 
 
 def sha256_of(text: str) -> str:
+    # بصمة النص المستعملة في كشف التطابق التام.
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def shingles(text: str, size: int = SHINGLE_SIZE) -> set[str]:
+    # يقطّع النص إلى مقاطع متداخلة من n كلمات؛ تشابه المجموعتين هو أساس قياس Jaccard.
     words = text.split()
     if len(words) < size:
         return {" ".join(words)} if words else set()
@@ -75,6 +101,7 @@ def shingles(text: str, size: int = SHINGLE_SIZE) -> set[str]:
 
 
 def build_minhash(shingle_set: set[str], num_perm: int = NUM_PERM) -> MinHash:
+    # يبني بصمة MinHash تقريبية لمجموعة المقاطع، فتُقارَن الوثائق دون مقارنة نصوصها كاملة.
     m = MinHash(num_perm=num_perm)
     for sh in shingle_set:
         m.update(sh.encode("utf-8"))
@@ -82,12 +109,15 @@ def build_minhash(shingle_set: set[str], num_perm: int = NUM_PERM) -> MinHash:
 
 
 def true_jaccard(a: set[str], b: set[str]) -> float:
+    # حساب Jaccard الدقيق (حجم التقاطع على حجم الاتحاد)، وهو الفيصل النهائي لا التقدير.
     if not a or not b:
         return 0.0
     return len(a & b) / len(a | b)
 
 
 def run(interim_dir: str, threshold: float, num_perm: int, shingle_size: int) -> dict:
+    # التشغيل الكامل: مرحلة التطابق التام ثم مرحلة التقارب، وإخراج تقرير يُكتب دائمًا
+    # حتى عند عدم وجود أي تكرار، لأن غياب التكرار نتيجة تستحق التوثيق أيضًا.
     docs = load_cleaned_docs(interim_dir)
     if not docs:
         raise SystemExit(f"No *_cleaned.json found under {interim_dir}. Run clean.py first.")
@@ -194,6 +224,11 @@ def self_test(interim_dir: str, threshold: float, num_perm: int, shingle_size: i
     copy (every 60th word replaced, true Jaccard ~0.85) of a real document, asserts both
     are caught, and asserts an unrelated document is not.
     """
+    # اختبار ذاتي: المجموعة الحالية يُتوقع خلوها من التكرار، وبالتالي فنجاح التشغيل
+    # لا يثبت شيئًا عن صحة الكاشف نفسه. لذلك تُصطنع هنا نسخة مطابقة تمامًا ونسخة
+    # مُحوَّرة قليلًا (تُستبدل كل كلمة ستين) نسبة تشابهها نحو 0.85، ويُتحقق من كشف
+    # الاثنتين معًا، ومن عدم كشف وثيقة غير ذات صلة. هذا الاختبار هو الذي كشف قصور
+    # عتبة LSH المذكور أعلاه.
     docs = load_cleaned_docs(interim_dir)
     base = max(docs, key=lambda d: len(d["cleaned_text"]))
     text = canonical_text(base["cleaned_text"])
@@ -240,6 +275,7 @@ def self_test(interim_dir: str, threshold: float, num_perm: int, shingle_size: i
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Stage 2: exact + near duplicate detection.")
+    # واجهة سطر الأوامر: تشغيل عادي، أو --self-test للتحقق من الكاشف والخروج.
     ap.add_argument("--self-test", action="store_true",
                     help="Run the synthetic duplicate sanity check and exit.")
     ap.add_argument("--interim-dir", default=INTERIM_DIR)

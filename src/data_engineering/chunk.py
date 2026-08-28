@@ -51,6 +51,44 @@ either variant), so chunking just packs consecutive paragraphs greedily:
   - a single paragraph longer than TARGET_MAX becomes its own chunk and is flagged
     `oversize_paragraph` (never split mid-paragraph, never discarded)
   - a trailing chunk below TARGET_MIN is kept and flagged `below_target_min`
+
+شرح بالعربية
+------------
+المرحلة الثالثة: التقطيع. تحزم الوحدات الكاملة الآتية من المرحلة الأولى في قطع
+يستهدف حجمها 200 إلى 800 وحدة عدّ، وتكتبها في chunks.jsonl.
+
+النص المُسلَّم
+--------------
+يُبنى chunk_text من paragraphs_original، أي النص محفوظ الإملاء (أ/إ/آ و ى كما وردت).
+النسخة الموحَّدة مفتاح مطابقة يخص dedup.py وحده ولا تُكتب هنا إطلاقًا.
+
+عدّ الوحدات
+-----------
+token_count تقدير بعدد الكلمات المفصولة بمسافات، بلا أي مُجزِّئ لغوي، حتى تبقى
+المرحلة حتمية ومستقلة عن النموذج. في العربية الفصحى يُنتج مُجزِّئ من نوع
+SentencePiece قرابة 1.5 إلى 2.5 رمز لكل كلمة، فتُعاد معايرة الحدين عند تثبيت مُجزِّئ
+التدريب.
+
+لماذا --format إلزامي ولا يُكتشف تلقائيًا؟
+------------------------------------------
+لأن الخطأ في تحديد نوع المصدر لا يُنتج خطأ ظاهرًا، بل مخرجات معقولة الشكل وفاسدة
+المضمون: معجم عومل كنثر يتحول إلى كتل بحجم الصفحة، وقصيدة عوملت كنثر تفقد حدود
+مقاطعها. الاكتشاف التلقائي يعني تخمينًا صامتًا في موضع لا يظهر فيه أثر التخمين إلا
+بعد التدريب. لذلك يُطلب تحديد النوع صراحةً، ويجب أن يكون هو نفسه المُمرَّر إلى
+clean.py، وأي اختلاف بينهما يُرفض التشغيل عنده بدل المضي فيه.
+
+ما يتغير بتغير النوع هو الوحدة المحزومة والوسم المُخرَج:
+  prose       فقرات   -> narrative_paragraph / prose / list / footnote_block
+  dictionary  مداخل معجمية -> dictionary_entry، وتُجمَّع المداخل القصيرة معًا لبلوغ
+              النطاق المستهدف بدل إخراج قطعة ضئيلة لكل مدخل، ولا يُشطر مدخل أبدًا.
+  verse       مقاطع شعرية -> verse، تُحزم كاملة ولا تُكسر في وسطها، ولا تعبر القطعة
+              حدود قصيدتين.
+
+قاعدة الحدود
+------------
+الكسر عند حدود الوحدات فقط: تُضاف الوحدات ما دام المجموع لا يتجاوز الحد الأعلى، ثم
+تُغلق القطعة. الوحدة الأطول من الحد الأعلى تصير قطعة مستقلة وتُعلَّم oversize، ولا
+تُشطر ولا تُحذف. والقطعة الأخيرة إن نزلت عن الحد الأدنى تُحفظ وتُعلَّم below_target_min.
 """
 
 from __future__ import annotations
@@ -73,9 +111,12 @@ FORMATS = ("prose", "dictionary", "verse")
 
 # A line that separates one poem from the next in a verse source (a title/heading line
 # sitting alone between stanzas). Chunks are never allowed to span one.
+# حدّ فاصل بين قصيدة وأخرى (سطر عنوان منفرد بين المقاطع)؛ لا يُسمح للقطعة بتجاوزه.
 POEM_BOUNDARY_RE = re.compile(r"^\s*(?:[*\-=~_]{3,}|#+\s|\[[^\]]+\])\s*$")
 
 # format_type heuristics
+# قواعد استدلالية لتحديد format_type في مصادر النثر: علامات القوائم، وسطور الحواشي،
+# وطول العنوان.
 LIST_MARKER_RE = re.compile(r"^\s*(?:[-•*]\s|\(?[٠-٩0-9]+\)|[٠-٩0-9]+[.)]\s)")
 FOOTNOTE_RE = re.compile(r"^\s*\^\(")
 HEADING_MAX_WORDS = 8
@@ -83,10 +124,12 @@ HEADING_MAX_WORDS = 8
 
 def token_count(text: str) -> int:
     """Word-based token approximation (see module docstring)."""
+    # تقدير عدد الوحدات بعدّ الكلمات المفصولة بمسافات؛ لا مُجزِّئ لغوي هنا.
     return len(text.split())
 
 
 def is_heading(paragraph: str) -> bool:
+    # عنوان مُرجَّح: سطر قصير لا ينتهي بعلامة ترقيم تدل على جملة تامة.
     return (
         token_count(paragraph) <= HEADING_MAX_WORDS
         and not paragraph.rstrip().endswith((".", "؟", "!", "،", ":", "؛"))
@@ -95,6 +138,8 @@ def is_heading(paragraph: str) -> bool:
 
 def classify_format(paragraphs: list[str], fmt: str = "prose") -> str:
     """format_type for a chunk, from the units it contains."""
+    # وسم نوع المحتوى: يُحسم مباشرة في المعجم والشعر، أما النثر فيُستدل عليه من
+    # نسبة السطور التي تبدأ بعلامة قائمة أو بعلامة حاشية.
     if fmt == "dictionary":
         return "dictionary_entry"
     if fmt == "verse":
@@ -126,6 +171,12 @@ def pack_units(units: list[str], target_max: int,
     Bundling short units is what keeps dictionary sources from producing one tiny chunk
     per glossary entry: entries accumulate until the next one would overflow target_max.
     """
+    # الحزم الجَشِع: تُضاف الوحدات واحدة تلو الأخرى حتى توشك الإضافة التالية على تجاوز
+    # الحد الأعلى، فتُغلق القطعة. الوحدة لا تُشطر أبدًا مهما طالت. آلية واحدة تخدم
+    # الأنواع الثلاثة، والمختلف بينها هو ما يُعدّ وحدة، وقد حُسم ذلك في المرحلة الأولى.
+    # المعامل hard_break يفرض بدء قطعة جديدة عند حدّ معيّن مهما كانت القطعة الحالية
+    # فارغة، ويُستعمل لحدود القصائد. وتجميع الوحدات القصيرة هو ما يمنع المعجم من
+    # إنتاج قطعة ضئيلة لكل مدخل.
     chunks: list[dict] = []
     buf: list[str] = []
     buf_tokens = 0
@@ -166,6 +217,7 @@ def pack_units(units: list[str], target_max: int,
 
 
 def load_kept_doc_ids(dedup_report_path: str) -> set[str] | None:
+    # يقرأ من تقرير المرحلة الثانية قائمة الوثائق المُبقاة، لتخطي المتطابقات حرفيًا.
     if not os.path.exists(dedup_report_path):
         return None
     with open(dedup_report_path, encoding="utf-8") as f:
@@ -175,6 +227,8 @@ def load_kept_doc_ids(dedup_report_path: str) -> set[str] | None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Stage 3: unit-boundary chunking.")
+    # واجهة سطر الأوامر. الافتراضات المهمة: --text-variant = original أي النص محفوظ
+    # الإملاء، و--format إلزامي التطابق مع ما مُرِّر إلى clean.py.
     ap.add_argument("--interim-dir", default=INTERIM_DIR)
     ap.add_argument("--dedup-report", default=DEDUP_REPORT)
     ap.add_argument("--out", default=CHUNKS_PATH)

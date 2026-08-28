@@ -9,6 +9,20 @@ Output: data/eda/eda_report.md
 
 The markdown report is self-contained: it embeds an ASCII histogram so it reads fine in
 a terminal or on GitHub, and links the PNG for a nicer view.
+
+شرح بالعربية
+------------
+المرحلة الرابعة: التحليل الاستكشافي على مجموعة القطع النهائية. تُخرج تقريرًا بصيغة
+Markdown مكتفيًا بذاته: يتضمن رسمًا بيانيًا نصيًا يظهر في الطرفية وعلى GitHub، ويشير
+إلى صورة PNG لعرض أوضح.
+
+يغطي التقرير: توزيع أحجام القطع بالمئينات، وتوزيع المناطق مع تنبيه على المنطقة
+الأقل تمثيلًا، وإحصاءات مرحلة التنظيف وما وُسم منها للمراجعة، ونتائج كشف التكرار،
+وأمثلة من القطع.
+
+خيار --no-examples يحذف قسم الأمثلة وحده، وهو القسم الوحيد الذي ينقل نصًا حرفيًا من
+المصدر. يُستعمل هذا الخيار لأي تقرير سيُرفع إلى المستودع أو يُشارَك، ما دامت حقوق
+المصدر غير محسومة.
 """
 
 from __future__ import annotations
@@ -32,11 +46,13 @@ ASCII_WIDTH = 46
 
 
 def load_jsonl(path: str) -> list[dict]:
+    # قراءة ملف JSONL: كائن واحد في كل سطر.
     with open(path, encoding="utf-8") as f:
         return [json.loads(line) for line in f if line.strip()]
 
 
 def load_json(path: str) -> dict:
+    # قراءة تقرير JSON اختياري؛ يُعاد قاموس فارغ إن لم يوجد الملف.
     if not os.path.exists(path):
         return {}
     with open(path, encoding="utf-8") as f:
@@ -45,6 +61,7 @@ def load_json(path: str) -> dict:
 
 def percentile(sorted_vals: list[int], q: float) -> float:
     """Linear-interpolation percentile (numpy-free, keeps the report reproducible)."""
+    # حساب المئين باستيفاء خطي، دون numpy، حتى تبقى أرقام التقرير قابلة لإعادة الإنتاج.
     if not sorted_vals:
         return 0.0
     if len(sorted_vals) == 1:
@@ -55,6 +72,7 @@ def percentile(sorted_vals: list[int], q: float) -> float:
 
 
 def ascii_histogram(values: list[int], bins: int = HIST_BINS, width: int = ASCII_WIDTH) -> str:
+    # رسم بياني نصي لتوزيع الأحجام، ليقرأ التقرير في الطرفية دون الحاجة إلى صورة.
     lo, hi = min(values), max(values)
     if lo == hi:
         return f"{lo:>5} | {'#' * width} {len(values)}"
@@ -74,6 +92,7 @@ def ascii_histogram(values: list[int], bins: int = HIST_BINS, width: int = ASCII
 
 
 def save_png_histogram(values: list[int], path: str) -> bool:
+    # حفظ الرسم البياني كصورة PNG إن توفّرت matplotlib؛ وإلا يمضي التقرير بالرسم النصي.
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -94,6 +113,7 @@ def save_png_histogram(values: list[int], path: str) -> bool:
 
 
 def md_table(headers: list[str], rows: list[list], aligns: list[str] | None = None) -> str:
+    # بناء جدول Markdown مع محاذاة اختيارية لكل عمود.
     aligns = aligns or ["---"] * len(headers)
     out = ["| " + " | ".join(headers) + " |", "| " + " | ".join(aligns) + " |"]
     for r in rows:
@@ -105,6 +125,7 @@ UNDER_RESOURCED_RATIO = 0.5   # share of the median regional token count
 
 
 def by_region_of(chunks: list[dict]) -> dict:
+    # تجميع القطع حسب المنطقة.
     d: dict[str, list[dict]] = defaultdict(list)
     for c in chunks:
         d[c["region"]].append(c)
@@ -113,6 +134,9 @@ def by_region_of(chunks: list[dict]) -> dict:
 
 def under_resourced_regions(by_region: dict) -> list[dict]:
     """Regions carrying well under the typical regional volume, worst first."""
+    # رصد المناطق ضعيفة التمثيل: تُقارن حصيلة كل منطقة بوسيط حصائل المناطق، وتُرصد
+    # كل منطقة تقل عن نصف الوسيط. الغرض تنبيه الفريق إلى أين يوجَّه جهد جمع المصادر،
+    # لأن قيمة المدونة الإقليمية محكومة بأضعف مناطقها لا بمجموعها.
     totals = {r: sum(c["token_count"] for c in cs) for r, cs in by_region.items()}
     if len(totals) < 3:
         return []
@@ -126,11 +150,14 @@ def under_resourced_regions(by_region: dict) -> list[dict]:
 
 def rtl(text: str) -> str:
     """Wrap Arabic sample text so markdown renderers lay it out right-to-left."""
+    # تغليف النص العربي بوسم اتجاه، حتى تعرضه عارضات Markdown باتجاه عربي صحيح.
     return f'<div dir="rtl" lang="ar">\n\n{text}\n\n</div>'
 
 
 def build_report(chunks: list[dict], cleaning: dict, dedup: dict, chunking: dict,
                  png_written: bool, png_path: str, include_examples: bool = True) -> str:
+    # بناء نص التقرير كاملًا. المعامل include_examples هو ما يحدد إدراج قسم الأمثلة
+    # الذي ينقل نصًا حرفيًا من المصدر أو حذفه.
     tokens = sorted(c["token_count"] for c in chunks)
     total_tokens = sum(tokens)
 
@@ -403,6 +430,8 @@ def build_report(chunks: list[dict], cleaning: dict, dedup: dict, chunking: dict
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Stage 4: EDA over the final chunk set.")
+    # واجهة سطر الأوامر: مسارات الإدخال والإخراج، و--no-examples للنسخة الخالية من
+    # النص المصدري.
     ap.add_argument("--chunks", default=CHUNKS_PATH)
     ap.add_argument("--cleaning-report", default=CLEANING_REPORT)
     ap.add_argument("--dedup-report", default=DEDUP_REPORT)
