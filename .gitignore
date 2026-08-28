@@ -224,16 +224,12 @@ data/interim/*
 venv/
 __pycache__/
 *.pyc
-# Archived MSA-pilot intermediates: regenerable from the archived downloader, kept local
-archive/msa_pilot/interim/*
-!archive/msa_pilot/interim/.gitkeep
-
 # Dialect-dictionary source apparatus: rights unverified, keep local until reviewed
 archive/dialect_dictionary_apparatus/*
 !archive/dialect_dictionary_apparatus/.gitkeep
 
 # Dialect-phase chunk output: derived from a source whose rights are not yet cleared
-# (license: unverified_pending_review). The archived MSA pilot chunks stay tracked - CC-BY-4.0.
+# (license: unverified_pending_review).
 data/processed/chunks.jsonl
 
 # Local-only EDA build that reproduces source excerpts (see eda.py --no-examples)

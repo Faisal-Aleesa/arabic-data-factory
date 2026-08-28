@@ -247,7 +247,7 @@ def main() -> None:
                     "doc_id": doc["doc_id"],
                     "source": doc["source"],
                     "license": doc["license"],
-                    "region": doc.get("region") or doc.get("domain"),
+                    "region": doc["region"],
                     "format_type": classify_format(c["units"], args.fmt),
                     "token_count": tokens,
                     "chunk_text": text,
@@ -271,7 +271,7 @@ def main() -> None:
             total_chunks += len(raw_chunks)
             per_doc.append({
                 "doc_id": doc["doc_id"],
-                "region": doc.get("region") or doc.get("domain"),
+                "region": doc["region"],
                 "title": doc["title"],
                 "unit_type": doc.get("unit_type", "paragraph"),
                 "units": len(units),

@@ -4,8 +4,8 @@ Input : data/processed/chunks.jsonl
         data/processed/cleaning_report.json   (review flags from Stage 1)
         data/processed/dedup_report.json      (Stage 2 stats)
         data/processed/chunking_report.json   (Stage 3 stats)
-Output: data/eda/eda_report_pilot.md
-        data/eda/token_histogram_pilot.png    (matplotlib, optional)
+Output: data/eda/eda_report.md
+        data/eda/token_histogram.png          (matplotlib, optional)
 
 The markdown report is self-contained: it embeds an ASCII histogram so it reads fine in
 a terminal or on GitHub, and links the PNG for a nicer view.
@@ -22,8 +22,8 @@ CHUNKS_PATH = "data/processed/chunks.jsonl"
 CLEANING_REPORT = "data/processed/cleaning_report.json"
 DEDUP_REPORT = "data/processed/dedup_report.json"
 CHUNK_REPORT = "data/processed/chunking_report.json"
-OUT_MD = "data/eda/eda_report_pilot.md"
-OUT_PNG = "data/eda/token_histogram_pilot.png"
+OUT_MD = "data/eda/eda_report.md"
+OUT_PNG = "data/eda/token_histogram.png"
 
 EXAMPLES_PER_REGION = 3
 EXAMPLE_CHARS = 420
@@ -85,7 +85,7 @@ def save_png_histogram(values: list[int], path: str) -> bool:
     ax.hist(values, bins=30, color="#3b6ea5", edgecolor="white")
     ax.set_xlabel("tokens per chunk (whitespace words)")
     ax.set_ylabel("chunks")
-    ax.set_title(f"Token count distribution - {len(values)} chunks (pilot)")
+    ax.set_title(f"Token count distribution - {len(values)} chunks")
     ax.grid(axis="y", alpha=0.3)
     fig.tight_layout()
     fig.savefig(path, dpi=140)
@@ -107,7 +107,7 @@ UNDER_RESOURCED_RATIO = 0.5   # share of the median regional token count
 def by_region_of(chunks: list[dict]) -> dict:
     d: dict[str, list[dict]] = defaultdict(list)
     for c in chunks:
-        d[c.get("region") or c.get("domain")].append(c)
+        d[c["region"]].append(c)
     return d
 
 
@@ -136,7 +136,7 @@ def build_report(chunks: list[dict], cleaning: dict, dedup: dict, chunking: dict
 
     by_region: dict[str, list[dict]] = defaultdict(list)
     for c in chunks:
-        by_region[c.get("region") or c.get("domain")].append(c)
+        by_region[c["region"]].append(c)
 
     L: list[str] = []
     A = L.append
@@ -304,7 +304,7 @@ def build_report(chunks: list[dict], cleaning: dict, dedup: dict, chunking: dict
         A("")
         flagged_chunks = [c for c in chunks if c["review_flags"]]
         A(md_table(["chunk_id", "region", "tokens", "units", "flags"],
-                   [[c["chunk_id"], c.get("region") or c.get("domain"), c["token_count"],
+                   [[c["chunk_id"], c["region"], c["token_count"],
                      c["source_pointer"].get("unit_count"), ", ".join(c["review_flags"])]
                     for c in sorted(flagged_chunks, key=lambda c: c["chunk_id"])],
                    ["---", "---", "---:", "---:", "---"]))
@@ -333,7 +333,7 @@ def build_report(chunks: list[dict], cleaning: dict, dedup: dict, chunking: dict
         A(f"- Policy: `{cfg.get('near_duplicate_policy')}`")
         A("")
         if dedup.get("exact_duplicates_removed", 0) == 0 and not dedup.get("near_duplicate_pairs"):
-            A("**Zero duplicates in the pilot** - expected for 20 distinct books from one "
+            A("**Zero duplicates found** - expected for distinct documents from a single "
               "source. Because a clean run proves nothing about the detector itself, "
               "`dedup.py --self-test` injects an exact copy and a ~0.85-Jaccard perturbed "
               "copy of a real document and asserts both are caught while an unrelated "

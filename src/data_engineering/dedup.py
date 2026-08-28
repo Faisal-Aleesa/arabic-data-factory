@@ -12,7 +12,7 @@ Two passes:
                  re-checked with the true Jaccard on the shingle sets to remove LSH
                  false positives.
 
-Near-duplicates are FLAGGED, not removed - the pilot rule is "never discard
+Near-duplicates are FLAGGED, not removed - the standing rule is "never discard
 automatically". Only byte-identical documents are excluded from chunking.
 """
 
@@ -174,7 +174,7 @@ def run(interim_dir: str, threshold: float, num_perm: int, shingle_size: int) ->
         "per_document": [
             {
                 "doc_id": d["doc_id"],
-                "region": d.get("region") or d.get("domain"),
+                "region": d["region"],
                 "sha256": sha256_of(canon[d["doc_id"]]),
                 "shingle_count": len(shingle_sets[d["doc_id"]]),
                 "status": "exact_duplicate" if d["doc_id"] in exact_duplicates
@@ -189,8 +189,8 @@ def run(interim_dir: str, threshold: float, num_perm: int, shingle_size: int) ->
 def self_test(interim_dir: str, threshold: float, num_perm: int, shingle_size: int) -> dict:
     """Sanity-check the detector on synthetic duplicates.
 
-    The pilot corpus is expected to contain zero duplicates, so a clean run proves
-    nothing about the logic. This injects (a) an exact copy and (b) a lightly perturbed
+    A corpus drawn from a single source is expected to contain zero duplicates, so a
+    clean run proves nothing about the logic. This injects (a) an exact copy and (b) a lightly perturbed
     copy (every 60th word replaced, true Jaccard ~0.85) of a real document, asserts both
     are caught, and asserts an unrelated document is not.
     """

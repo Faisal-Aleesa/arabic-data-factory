@@ -123,7 +123,7 @@ None.
 - Near: `MinHash+LSH, word 5-shingles, num_perm=128`, Jaccard threshold **0.8**, LSH candidates re-checked against the true Jaccard of the shingle sets to drop false positives
 - Policy: `flag only, never auto-remove`
 
-**Zero duplicates in the pilot** - expected for 20 distinct books from one source. Because a clean run proves nothing about the detector itself, `dedup.py --self-test` injects an exact copy and a ~0.85-Jaccard perturbed copy of a real document and asserts both are caught while an unrelated document is not. It passes.
+**Zero duplicates found** - expected for distinct documents from a single source. Because a clean run proves nothing about the detector itself, `dedup.py --self-test` injects an exact copy and a ~0.85-Jaccard perturbed copy of a real document and asserts both are caught while an unrelated document is not. It passes.
 
 ## 5. Example chunks
 

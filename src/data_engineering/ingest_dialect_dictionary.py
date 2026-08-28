@@ -1,8 +1,8 @@
 """Acquisition - معجم اللهجات المحكية -> per-region interim documents.
 
-This is the dialect-phase counterpart of the archived download_hindawi_corpus.py: it is
-an ACQUISITION step, not a fourth preprocessing stage. The cleaning / dedup / chunking
-stages are unchanged and still start from data/interim/.
+This is the ACQUISITION step for the regional dialect corpus, not a fourth preprocessing
+stage. The cleaning / dedup / chunking stages are unchanged and still start from
+data/interim/.
 
 Input : data/raw/<region>/dialect_dictionary_<region>.txt   (pdftotext -layout output,
                                                               form-feed separated pages)

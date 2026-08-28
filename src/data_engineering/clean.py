@@ -92,8 +92,8 @@ SECTION_HEADING_RE = re.compile(
 )
 MAX_SECTION_HEADING_WORDS = 12
 
-# Front-matter role markers used by Hindawi e-books. The marker sits on its own
-# line, the name(s) follow on the next line(s) inside the same paragraph.
+# Front-matter role markers used by Arabic e-book front matter. The marker sits on its
+# own line, the name(s) follow on the next line(s) inside the same paragraph.
 ROLE_MARKERS = {
     "تأليف": "author_stated",
     "ترجمة": "translator",
@@ -388,9 +388,7 @@ def clean_document(record: dict, strip_diacritics: bool = False, fmt: str = "pro
 
     cleaned = dict(record)
     cleaned.pop("raw_text", None)
-    # `region` replaces the MSA phase's `domain` as the partition key.
-    region = record.get("region") or record.get("domain")
-    cleaned.pop("domain", None)
+    region = record.get("region")
     cleaned.update(
         {
             "region": region,
