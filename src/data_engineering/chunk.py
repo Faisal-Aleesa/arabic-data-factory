@@ -41,16 +41,19 @@ and refused rather than silently producing garbage.
 
 Boundaries
 ----------
-Chunks break ONLY at paragraph boundaries. The corpus separates paragraphs with a blank
-line ("\\n\\n"); Stage 1 already materialized that as an index-aligned paragraph list
-(`paragraphs` / `paragraphs_original` share indices, so `source_pointer` is valid for
-either variant), so chunking just packs consecutive paragraphs greedily:
+Chunks break ONLY at unit boundaries. A unit is whatever Stage 1's --format decided is
+indivisible - a prose paragraph, a whole glossary entry, a whole stanza - materialized as
+an index-aligned list (`paragraphs` / `paragraphs_original` share indices, so
+`source_pointer` is valid for either variant). Chunking just packs consecutive units
+greedily:
 
-  - keep adding paragraphs while the running count stays <= TARGET_MAX
-  - flush once adding the next paragraph would exceed TARGET_MAX
-  - a single paragraph longer than TARGET_MAX becomes its own chunk and is flagged
-    `oversize_paragraph` (never split mid-paragraph, never discarded)
+  - keep adding units while the running count stays <= TARGET_MAX
+  - flush once adding the next unit would exceed TARGET_MAX
+  - a single unit longer than TARGET_MAX becomes its own chunk and is flagged
+    `oversize_<unit_type>` (never split mid-unit, never discarded)
   - a trailing chunk below TARGET_MIN is kept and flagged `below_target_min`
+  - in verse sources a poem boundary forces a flush even mid-fill, so one chunk never
+    holds the tail of one poem and the head of the next
 
 شرح بالعربية
 ------------
