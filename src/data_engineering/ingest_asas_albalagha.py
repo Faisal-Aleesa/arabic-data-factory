@@ -35,7 +35,7 @@ DOC_ID = "asas_albalagha"
 TITLE = "أساس البلاغة"
 AUTHOR = "محمود بن عمر الزمخشري"
 SOURCE = "Arabic Wikisource"
-LICENSE = "unverified_pending_review"
+LICENSE = "CC BY-SA 4.0"
 REGION = "classical"
 
 

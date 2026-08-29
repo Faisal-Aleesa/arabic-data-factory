@@ -1,6 +1,6 @@
-# EDA Report - Saudi Regional Dialect Corpus
+# EDA Report - أساس البلاغة
 
-- **Source corpus:** Arabic Wikisource | **License:** unverified_pending_review
+- **Source corpus:** Arabic Wikisource | **License:** CC BY-SA 4.0
 - **Documents in:** 1
 - **Source format:** `dictionary` (explicit per batch; clean.py and chunk.py must agree)
 - **Chunks out:** 394
@@ -65,7 +65,7 @@ tokens/chunk        | histogram                                     count
 
 - Characters in: **1,599,443** -> retained: **1,592,701** (**0.42%** removed overall)
 - Flag threshold: a document is flagged when cleaning removes more than **30%** of its characters
-- Diacritic stripping: **OFF** (default off - two children's books in this batch are fully vocalized)
+- Diacritic stripping: **OFF**
 
 Largest character deltas:
 
@@ -100,7 +100,7 @@ None.
 
 ## 5. Example chunks
 
-_Omitted from this build (`eda.py --no-examples`). This section is the only part of the report that reproduces source text verbatim, and this corpus carries `license: unverified_pending_review`. Regenerate without the flag for a local copy with excerpts._
+_Omitted from this build (`eda.py --no-examples`). This section is the only part of the report that reproduces source text verbatim. Current corpus license: `CC BY-SA 4.0`. Regenerate without the flag for a local copy with excerpts._
 
 ---
 

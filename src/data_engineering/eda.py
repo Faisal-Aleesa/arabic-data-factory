@@ -168,7 +168,7 @@ def build_report(chunks: list[dict], cleaning: dict, dedup: dict, chunking: dict
     L: list[str] = []
     A = L.append
 
-    A("# EDA Report - Saudi Regional Dialect Corpus")
+    A(f"# EDA Report - {chunks[0]['title']}")
     A("")
     A(f"- **Source corpus:** {chunks[0]['source']} | **License:** {chunks[0]['license']}")
     A(f"- **Documents in:** {chunking.get('documents_chunked', '?')}")
@@ -284,8 +284,7 @@ def build_report(chunks: list[dict], cleaning: dict, dedup: dict, chunking: dict
           f"(**{(raw-keep)/raw*100:.2f}%** removed overall)")
         A(f"- Flag threshold: a document is flagged when cleaning removes more than "
           f"**{cleaning.get('config', {}).get('char_loss_flag_threshold', 0.30)*100:.0f}%** of its characters")
-        A(f"- Diacritic stripping: **{'ON' if cleaning.get('config', {}).get('strip_diacritics') else 'OFF'}** "
-          f"(default off - two children's books in this batch are fully vocalized)")
+        A(f"- Diacritic stripping: **{'ON' if cleaning.get('config', {}).get('strip_diacritics') else 'OFF'}**")
         A("")
         worst = sorted(docs, key=lambda d: -d["char_loss_ratio"])[:5]
         A("Largest character deltas:")
@@ -376,10 +375,9 @@ def build_report(chunks: list[dict], cleaning: dict, dedup: dict, chunking: dict
     if not include_examples:
         A("## 5. Example chunks")
         A("")
-        A("_Omitted from this build (`eda.py --no-examples`). This section is the only "
-          "part of the report that reproduces source text verbatim, and this corpus "
-          "carries `license: unverified_pending_review`. Regenerate without the flag for "
-          "a local copy with excerpts._")
+        A(f"_Omitted from this build (`eda.py --no-examples`). This section is the only "
+          f"part of the report that reproduces source text verbatim. Current corpus license: "
+          f"`{chunks[0]['license']}`. Regenerate without the flag for a local copy with excerpts._")
         A("")
         A("---")
         A("")
