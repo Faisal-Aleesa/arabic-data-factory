@@ -1,0 +1,35 @@
+{
+  "documents": [
+    {
+      "doc_id": "asas_albalagha",
+      "region": "classical",
+      "source_format": "dictionary",
+      "unit_type": "entry_block",
+      "title": "أساس البلاغة",
+      "output": "data/interim/classical/asas_albalagha_cleaned.json",
+      "translator": null,
+      "reviewer": null,
+      "char_count_raw": 1599443,
+      "char_count_clean_body": 1599443,
+      "char_count_header": 0,
+      "char_count_retained": 1592701,
+      "char_delta": 6742,
+      "char_loss_ratio": 0.0042,
+      "char_count_measured_against": "paragraphs_original + header units (orthography-preserving content, excluding structural separators)",
+      "char_count_folded_body": 1577249,
+      "unit_count_raw": 3372,
+      "unit_count_body": 3372,
+      "header_paragraph_count": 0,
+      "word_count_clean": 285500,
+      "ftfy_changed_text": false,
+      "review_flags": []
+    }
+  ],
+  "flagged_for_review": [],
+  "config": {
+    "source_format": "dictionary",
+    "strip_diacritics": false,
+    "strip_tatweel": false,
+    "char_loss_flag_threshold": 0.3
+  }
+}

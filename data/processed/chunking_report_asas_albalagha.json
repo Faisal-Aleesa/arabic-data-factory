@@ -1,0 +1,29 @@
+{
+  "config": {
+    "target_min_tokens": 200,
+    "target_max_tokens": 800,
+    "token_count_method": "whitespace_word_count (word-based approximation)",
+    "source_format": "dictionary",
+    "boundary_rule": "whole units only, as segmented by Stage 1's --format",
+    "oversize_policy": "kept whole and flagged, never split mid-unit",
+    "poem_boundary_rule": "n/a",
+    "text_variant": "original"
+  },
+  "documents_chunked": 1,
+  "documents_skipped": [],
+  "total_chunks": 394,
+  "total_tokens": 285500,
+  "chunk_flag_counts": {},
+  "per_document": [
+    {
+      "doc_id": "asas_albalagha",
+      "region": "classical",
+      "title": "أساس البلاغة",
+      "unit_type": "entry_block",
+      "units": 3372,
+      "chunks": 394,
+      "tokens": 285500
+    }
+  ],
+  "output": "data/processed/chunks.jsonl"
+}

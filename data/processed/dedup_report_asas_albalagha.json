@@ -1,0 +1,30 @@
+{
+  "config": {
+    "exact_method": "sha256 of whitespace-collapsed cleaned_text",
+    "near_method": "MinHash+LSH, word 5-shingles, num_perm=128",
+    "jaccard_threshold": 0.8,
+    "lsh_index_threshold": 0.6,
+    "lsh_note": "index built looser than the decision threshold so banding does not drop borderline pairs; every candidate is re-checked against the true Jaccard",
+    "near_duplicate_policy": "flag only, never auto-remove"
+  },
+  "documents_scanned": 1,
+  "exact_duplicate_groups": [],
+  "exact_duplicates_removed": 0,
+  "exact_duplicate_map": {},
+  "near_duplicate_candidate_pairs": 0,
+  "near_duplicate_pairs": [],
+  "near_duplicates_flagged": [],
+  "documents_kept": [
+    "asas_albalagha"
+  ],
+  "documents_kept_count": 1,
+  "per_document": [
+    {
+      "doc_id": "asas_albalagha",
+      "region": "classical",
+      "sha256": "7aed968966c1d6581b311a6c1b71af7bc0574d17b0e7d0fb902270d369544382",
+      "shingle_count": 284767,
+      "status": "unique"
+    }
+  ]
+}
