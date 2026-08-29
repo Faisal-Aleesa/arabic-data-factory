@@ -102,6 +102,8 @@ import json
 import os
 import re
 
+from clean import corpus_of, scope_to_corpus   # one definition, shared
+
 INTERIM_DIR = "data/interim"
 DEDUP_REPORT = "data/processed/dedup_report.json"
 CHUNKS_PATH = "data/processed/chunks.jsonl"
@@ -236,6 +238,9 @@ def main() -> None:
     ap.add_argument("--dedup-report", default=DEDUP_REPORT)
     ap.add_argument("--out", default=CHUNKS_PATH)
     ap.add_argument("--report", default=CHUNK_REPORT)
+    ap.add_argument("--corpus", default=None,
+                    help="Process only documents whose `corpus` field matches. Required "
+                         "whenever data/interim holds more than one corpus.")
     ap.add_argument("--target-min", type=int, default=TARGET_MIN)
     ap.add_argument("--target-max", type=int, default=TARGET_MAX)
     ap.add_argument("--text-variant", choices=["original", "normalized"], default="original",
@@ -256,6 +261,17 @@ def main() -> None:
     if not paths:
         raise SystemExit(f"No *_cleaned.json under {args.interim_dir}. Run clean.py first.")
 
+    loaded = []
+    for path in paths:
+        with open(path, encoding="utf-8") as f:
+            loaded.append((path, json.load(f)))
+    # same scoping rule as clean.py: one corpus per run, or refuse. Without it two corpora
+    # would be packed into a single chunks.jsonl with no indication it had happened.
+    # القاعدة نفسها: مدونة واحدة لكل تشغيلة، وإلا تُرفض التشغيلة، لئلا تُدمج مدونتان في
+    # ملف قطع واحد دون أي إشارة إلى حدوث ذلك.
+    loaded = scope_to_corpus(loaded, args.corpus, "chunk")
+    print(f"[chunk] corpus: {corpus_of(loaded[0][1])} | {len(loaded)} document(s)")
+
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     per_doc = []
     skipped = []
@@ -263,10 +279,7 @@ def main() -> None:
     flag_counts: dict[str, int] = {}
 
     with open(args.out, "w", encoding="utf-8") as out:
-        for path in paths:
-            with open(path, encoding="utf-8") as f:
-                doc = json.load(f)
-
+        for path, doc in loaded:
             if kept is not None and doc["doc_id"] not in kept:
                 skipped.append({"doc_id": doc["doc_id"], "reason": "exact_duplicate"})
                 print(f"[chunk] skipping {doc['doc_id']} (exact duplicate)")
@@ -344,6 +357,7 @@ def main() -> None:
             "target_min_tokens": args.target_min,
             "target_max_tokens": args.target_max,
             "token_count_method": "whitespace_word_count (word-based approximation)",
+            "corpus": args.corpus,
             "source_format": args.fmt,
             "boundary_rule": "whole units only, as segmented by Stage 1's --format",
             "oversize_policy": "kept whole and flagged, never split mid-unit",

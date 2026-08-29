@@ -63,7 +63,7 @@ tokens/chunk        | histogram                                     count
 
 ## 3. Cleaning stage and items flagged for review
 
-- Characters in: **1,599,443** -> retained: **1,592,701** (**0.42%** removed overall)
+- Characters in: **1,599,443** -> retained: **1,570,507** (**1.81%** removed overall)
 - Flag threshold: a document is flagged when cleaning removes more than **30%** of its characters
 - Diacritic stripping: **OFF**
 
@@ -71,7 +71,7 @@ Largest character deltas:
 
 | doc_id | region | chars in | chars retained | % removed | flags |
 | --- | --- | ---: | ---: | ---: | --- |
-| asas_albalagha | classical | 1,599,443 | 1,592,701 | 0.42% | - |
+| asas_albalagha | classical | 1,599,443 | 1,570,507 | 1.81% | - |
 
 ### Documents flagged during cleaning: **0**
 

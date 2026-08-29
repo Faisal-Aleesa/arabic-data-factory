@@ -123,6 +123,7 @@
   ],
   "flagged_for_review": [],
   "config": {
+    "corpus": "saudi_dialect",
     "source_format": "dictionary",
     "strip_diacritics": false,
     "strip_tatweel": false,

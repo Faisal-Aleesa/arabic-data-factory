@@ -123,6 +123,13 @@ def md_table(headers: list[str], rows: list[list], aligns: list[str] | None = No
 
 UNDER_RESOURCED_RATIO = 0.5   # share of the median regional token count
 
+# The five Saudi dialect regions. The under-resourced signal is a SOURCING decision about
+# regional balance, so it must be computed over these and nothing else. Other content can
+# legitimately share chunks.jsonl - classical fusha, for instance - and would otherwise
+# enter as a peer "region", shift the median, and mark genuine regions as adequately
+# covered (or falsely thin) purely because unrelated material sits alongside them.
+DIALECT_REGIONS = ("najdi", "southern", "northern", "eastern", "western")
+
 
 def by_region_of(chunks: list[dict]) -> dict:
     # تجميع القطع حسب المنطقة.
@@ -132,12 +139,21 @@ def by_region_of(chunks: list[dict]) -> dict:
     return d
 
 
-def under_resourced_regions(by_region: dict) -> list[dict]:
-    """Regions carrying well under the typical regional volume, worst first."""
+def under_resourced_regions(by_region: dict,
+                            dialect_regions: tuple = DIALECT_REGIONS) -> list[dict]:
+    """Dialect regions carrying well under the typical regional volume, worst first.
+
+    Only the five dialect regions are ever considered. Whatever else the chunk set holds is
+    excluded by name rather than trusted from the region field, so mixing another corpus
+    into the same file cannot move this signal.
+    """
     # رصد المناطق ضعيفة التمثيل: تُقارن حصيلة كل منطقة بوسيط حصائل المناطق، وتُرصد
     # كل منطقة تقل عن نصف الوسيط. الغرض تنبيه الفريق إلى أين يوجَّه جهد جمع المصادر،
     # لأن قيمة المدونة الإقليمية محكومة بأضعف مناطقها لا بمجموعها.
-    totals = {r: sum(c["token_count"] for c in cs) for r, cs in by_region.items()}
+    # يُحسب هذا على المناطق الخمس وحدها؛ أي محتوى آخر (كالفصحى الكلاسيكية) يُستبعد
+    # بالاسم لا بالثقة في حقل region، حتى لا يزيح خلط مدونة أخرى هذه الإشارة.
+    totals = {r: sum(c["token_count"] for c in cs)
+              for r, cs in by_region.items() if r in dialect_regions}
     if len(totals) < 3:
         return []
     ordered = sorted(totals.values())
@@ -154,8 +170,29 @@ def rtl(text: str) -> str:
     return f'<div dir="rtl" lang="ar">\n\n{text}\n\n</div>'
 
 
+def corpus_title(chunks: list[dict], corpus_name: str | None = None) -> str:
+    """Heading for the report as a whole.
+
+    Never derived from chunks[0]: that is whichever document happened to sort first, so a
+    multi-document corpus would end up titled after one of its documents. An explicit
+    --corpus-name wins; failing that, a single-document corpus may use its own title, and
+    anything else falls back to a static heading.
+    """
+    # عنوان التقرير على مستوى المدونة كلها. لا يُشتق أبدًا من chunks[0]، لأن ذلك هو
+    # أول وثيقة بحسب الترتيب فقط، فتُنسب مدونة متعددة الوثائق إلى إحداها. الأولوية
+    # للاسم المُمرَّر صراحةً، ثم لعنوان الوثيقة إن كانت المدونة وثيقة واحدة، وإلا
+    # فعنوان ثابت محايد.
+    if corpus_name:
+        return corpus_name
+    titles = {c.get("title") for c in chunks}
+    if len(titles) == 1:
+        return next(iter(titles))
+    return "Corpus"
+
+
 def build_report(chunks: list[dict], cleaning: dict, dedup: dict, chunking: dict,
-                 png_written: bool, png_path: str, include_examples: bool = True) -> str:
+                 png_written: bool, png_path: str, include_examples: bool = True,
+                 corpus_name: str | None = None) -> str:
     # بناء نص التقرير كاملًا. المعامل include_examples هو ما يحدد إدراج قسم الأمثلة
     # الذي ينقل نصًا حرفيًا من المصدر أو حذفه.
     tokens = sorted(c["token_count"] for c in chunks)
@@ -168,7 +205,7 @@ def build_report(chunks: list[dict], cleaning: dict, dedup: dict, chunking: dict
     L: list[str] = []
     A = L.append
 
-    A(f"# EDA Report - {chunks[0]['title']}")
+    A(f"# EDA Report - {corpus_title(chunks, corpus_name)}")
     A("")
     A(f"- **Source corpus:** {chunks[0]['source']} | **License:** {chunks[0]['license']}")
     A(f"- **Documents in:** {chunking.get('documents_chunked', '?')}")
@@ -436,6 +473,11 @@ def main() -> None:
     ap.add_argument("--chunk-report", default=CHUNK_REPORT)
     ap.add_argument("--out", default=OUT_MD)
     ap.add_argument("--png", default=OUT_PNG)
+    ap.add_argument("--corpus-name", default=None,
+                    help="Heading for the report as a whole, e.g. \"Saudi Regional Dialect "
+                         "Corpus\". Required for multi-document corpora - without it a corpus "
+                         "of several documents falls back to a static heading rather than "
+                         "being named after one of its documents.")
     ap.add_argument("--no-examples", action="store_true",
                     help="Omit section 5 (example chunks). That section is the only place "
                          "the report reproduces source text verbatim - drop it when the "
@@ -459,6 +501,7 @@ def main() -> None:
         png_ok,
         args.png,
         include_examples=not args.no_examples,
+        corpus_name=args.corpus_name,
     )
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     with open(args.out, "w", encoding="utf-8") as f:

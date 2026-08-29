@@ -47,11 +47,12 @@ Run in order, from the repo root:
 
 ```bash
 python src/data_engineering/ingest_dialect_dictionary.py
-python src/data_engineering/clean.py  --format dictionary
-python src/data_engineering/dedup.py
-python src/data_engineering/chunk.py  --format dictionary
+python src/data_engineering/clean.py  --corpus saudi_dialect --format dictionary
+python src/data_engineering/dedup.py  --corpus saudi_dialect
+python src/data_engineering/chunk.py  --corpus saudi_dialect --format dictionary
 python src/data_engineering/eda.py    --out data/eda/eda_report_saudi_dialect.md \
                                       --png data/eda/token_histogram_saudi_dialect.png \
+                                      --corpus-name "Saudi Regional Dialect Corpus" \
                                       --no-examples
 ```
 
@@ -70,6 +71,37 @@ Format is **explicit — there is no auto-detection**. Choose one of `prose`, `d
 rather than silently producing garbage. The format determines what counts as an
 indivisible unit: a paragraph, a glossary entry, or a stanza.
 
+### `--corpus` scopes a run to one corpus
+
+`data/interim/` can hold several corpora at once, and cleaning settings apply to every
+document in a run. The dialect dictionary must KEEP tatweel; the classical lexicon must
+have it stripped. A run spanning both would apply one corpus's settings to the other and
+report success.
+
+So `clean.py` and `chunk.py` **refuse to run** when more than one corpus is present and
+no `--corpus` is given:
+
+```
+[clean] REFUSING to run: data/interim holds more than one corpus and no
+    --corpus was given. Settings apply to every document in a run, so one
+    corpus's settings would be applied to the other with no error raised.
+    corpora found:
+      classical_lexicon    1 document(s)
+      saudi_dialect        5 document(s)
+    Re-run scoped, e.g. --corpus classical_lexicon
+```
+
+With a single corpus present, an unscoped run behaves exactly as before.
+
+`dedup.py` takes `--corpus` too but does **not** refuse without it — it applies no
+per-corpus setting, and comparing across corpora is a legitimate question. Scope it when
+the report is meant to describe one corpus.
+
+The value comes from the `corpus` field each ingest script writes into its interim
+records, using the same vocabulary as the manifest's `corpus_phase` column
+(`saudi_dialect`, `classical_lexicon`). A new ingest script must set it.
+
+
 ### Two flags worth knowing
 
 - `chunk.py --text-variant` defaults to `original` (orthography preserved). The
@@ -77,6 +109,10 @@ indivisible unit: a paragraph, a glossary entry, or a stanza.
   shipped — regional spelling variation is the signal this corpus exists to capture.
 - `eda.py --no-examples` omits the one report section that reproduces source text
   verbatim. Use it for any report that will be committed or shared.
+
+`eda.py --corpus-name` names the report as a whole. Pass it for any corpus of more than
+one document — without it a multi-document corpus falls back to a static heading rather
+than being titled after whichever document happens to sort first.
 
 `dedup.py --self-test` verifies the duplicate detector against synthetic duplicates; a
 run finding zero duplicates proves nothing on its own.
@@ -182,6 +218,19 @@ on a sample before committing to it.
 Either way, **OCR output must go through this project's `clean.py`**, not be cleaned
 separately. The normalization decisions below are what keep sources comparable; a source
 cleaned outside the pipeline silently opts out of them.
+
+### Step 5 — Give the source its own corpus name
+
+Set a `corpus` value in the interim records your ingest script writes, and pass it as
+`--corpus` to `clean.py`, `dedup.py` and `chunk.py`. Reuse the manifest's `corpus_phase`
+vocabulary.
+
+This is not bookkeeping. Cleaning settings are corpus-wide, so the moment a second corpus
+exists in `data/interim/` an unscoped run would apply one corpus's `--format` and
+tatweel/diacritic settings to the other — no error, plausible-looking output, wrong text.
+`clean.py` and `chunk.py` now refuse rather than guess, but they can only do that if your
+records carry the field.
+
 
 ### Normalization decisions to revisit per source
 

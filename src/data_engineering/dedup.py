@@ -44,6 +44,8 @@ import re
 
 from datasketch import MinHash, MinHashLSH
 
+from clean import corpus_of
+
 INTERIM_DIR = "data/interim"
 REPORT_PATH = "data/processed/dedup_report.json"
 
@@ -70,13 +72,25 @@ def lsh_threshold_for(threshold: float) -> float:
     return round(max(MIN_LSH_THRESHOLD, threshold - LSH_THRESHOLD_MARGIN), 4)
 
 
-def load_cleaned_docs(interim_dir: str) -> list[dict]:
-    # يقرأ كل ملفات _cleaned.json الناتجة عن المرحلة الأولى.
+def load_cleaned_docs(interim_dir: str, corpus: str | None = None) -> list[dict]:
+    """Cleaned documents, optionally restricted to one corpus.
+
+    Unlike clean.py and chunk.py this does NOT refuse an unscoped run. Those stages apply
+    per-corpus settings or write a single output file, so spanning corpora corrupts or
+    mixes silently. Deduplication applies no per-corpus setting and comparing across
+    corpora is a legitimate question - you may well want to know whether a classical text
+    duplicates dialect material. Scope it when the report is meant to describe one corpus.
+    """
+    # يقرأ كل ملفات _cleaned.json الناتجة عن المرحلة الأولى، مع إمكان قصرها على مدونة.
+    # هذه المرحلة لا ترفض التشغيل غير المُقيَّد، بخلاف التنظيف والتقطيع: فهي لا تطبّق
+    # إعدادًا خاصًا بمدونة، والمقارنة بين المدونات سؤال مشروع بذاته.
     docs = []
     for path in sorted(glob.glob(os.path.join(interim_dir, "*", "*_cleaned.json"))):
         with open(path, encoding="utf-8") as f:
             rec = json.load(f)
         rec["_path"] = path.replace("\\", "/")
+        if corpus is not None and corpus_of(rec) != corpus:
+            continue
         docs.append(rec)
     return docs
 
@@ -115,12 +129,15 @@ def true_jaccard(a: set[str], b: set[str]) -> float:
     return len(a & b) / len(a | b)
 
 
-def run(interim_dir: str, threshold: float, num_perm: int, shingle_size: int) -> dict:
+def run(interim_dir: str, threshold: float, num_perm: int, shingle_size: int,
+        corpus: str | None = None) -> dict:
     # التشغيل الكامل: مرحلة التطابق التام ثم مرحلة التقارب، وإخراج تقرير يُكتب دائمًا
     # حتى عند عدم وجود أي تكرار، لأن غياب التكرار نتيجة تستحق التوثيق أيضًا.
-    docs = load_cleaned_docs(interim_dir)
+    docs = load_cleaned_docs(interim_dir, corpus)
     if not docs:
-        raise SystemExit(f"No *_cleaned.json found under {interim_dir}. Run clean.py first.")
+        raise SystemExit(f"No *_cleaned.json found under {interim_dir}"
+                         + (f" for corpus {corpus!r}" if corpus else "")
+                         + ". Run clean.py first.")
 
     print(f"[dedup] loaded {len(docs)} cleaned documents")
 
@@ -192,6 +209,7 @@ def run(interim_dir: str, threshold: float, num_perm: int, shingle_size: int) ->
                          "against the true Jaccard"),
             "near_duplicate_policy": "flag only, never auto-remove",
         },
+        "corpus": corpus,
         "documents_scanned": len(docs),
         "exact_duplicate_groups": exact_groups,
         "exact_duplicates_removed": len(exact_duplicates),
@@ -280,6 +298,10 @@ def main() -> None:
                     help="Run the synthetic duplicate sanity check and exit.")
     ap.add_argument("--interim-dir", default=INTERIM_DIR)
     ap.add_argument("--report", default=REPORT_PATH)
+    ap.add_argument("--corpus", default=None,
+                    help="Restrict to one corpus. Optional: unlike clean.py/chunk.py an "
+                         "unscoped run is valid here, since cross-corpus duplicate "
+                         "detection is a legitimate question.")
     ap.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD)
     ap.add_argument("--num-perm", type=int, default=NUM_PERM)
     ap.add_argument("--shingle-size", type=int, default=SHINGLE_SIZE)
@@ -289,7 +311,8 @@ def main() -> None:
         res = self_test(args.interim_dir, args.threshold, args.num_perm, args.shingle_size)
         raise SystemExit(0 if res["passed"] else 1)
 
-    report = run(args.interim_dir, args.threshold, args.num_perm, args.shingle_size)
+    report = run(args.interim_dir, args.threshold, args.num_perm, args.shingle_size,
+                 args.corpus)
 
     os.makedirs(os.path.dirname(args.report), exist_ok=True)
     with open(args.report, "w", encoding="utf-8") as f:

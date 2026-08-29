@@ -7,6 +7,7 @@
     "lsh_note": "index built looser than the decision threshold so banding does not drop borderline pairs; every candidate is re-checked against the true Jaccard",
     "near_duplicate_policy": "flag only, never auto-remove"
   },
+  "corpus": "classical_lexicon",
   "documents_scanned": 1,
   "exact_duplicate_groups": [],
   "exact_duplicates_removed": 0,

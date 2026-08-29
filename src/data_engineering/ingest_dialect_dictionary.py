@@ -73,6 +73,14 @@ AUTHOR = "سليمان بن ناصر الدرسوني"
 SOURCE = "provided directly by the team, not from a public repo"
 LICENSE = "unverified_pending_review"
 
+# The corpus this acquisition belongs to. Cleaning settings (--format, --strip-tatweel,
+# --strip-diacritics) are corpus-wide, so every stage scopes its run by this value rather
+# than processing whatever happens to sit in data/interim/. Same vocabulary as the
+# manifest's corpus_phase column.
+# المدونة التي ينتمي إليها هذا الاقتناء. إعدادات التنظيف تسري على المدونة كلها، ولذلك
+# تُقصر كل مرحلة تشغيلها على هذه القيمة بدل معالجة كل ما يصادفها في data/interim.
+CORPUS = "saudi_dialect"
+
 BIDI_RE = re.compile(r"[​-‏‪-‮﻿]")
 FOLIO_RE = re.compile(r"^\s*-\s*\d+\s*-\s*$")
 ARABIC_TOKEN_RE = re.compile(r"[ء-ٰٟـ]+")
@@ -288,6 +296,7 @@ def ingest_region(region: str, raw_path: str, first_page: int) -> tuple[dict, li
     body = "\n\n".join(kept_pages)
     record = {
         "doc_id": f"dialect_dict_{region}",
+        "corpus": CORPUS,
         "title": f"{TITLE} - {region}",
         "author": AUTHOR,
         "region": region,

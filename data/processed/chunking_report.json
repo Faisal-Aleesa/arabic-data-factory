@@ -3,6 +3,7 @@
     "target_min_tokens": 200,
     "target_max_tokens": 800,
     "token_count_method": "whitespace_word_count (word-based approximation)",
+    "corpus": "saudi_dialect",
     "source_format": "dictionary",
     "boundary_rule": "whole units only, as segmented by Stage 1's --format",
     "oversize_policy": "kept whole and flagged, never split mid-unit",

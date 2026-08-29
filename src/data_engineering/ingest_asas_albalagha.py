@@ -38,6 +38,11 @@ SOURCE = "Arabic Wikisource"
 LICENSE = "CC BY-SA 4.0"
 REGION = "classical"
 
+# Corpus this acquisition belongs to; every pipeline stage scopes its run by this value.
+# Cleaning settings are corpus-wide, and this source needs --strip-tatweel while the
+# dialect corpus must not have it, so the two can never share a single run.
+CORPUS = "classical_lexicon"
+
 
 ARABIC_LETTER = r"[ءاأإآبتثجحخدذرزسشصضطظعغفقكلمنهويى]"
 
@@ -214,6 +219,7 @@ def main() -> None:
 
     record = {
         "doc_id": DOC_ID,
+        "corpus": CORPUS,
         "title": TITLE,
         "author": AUTHOR,
         "source": SOURCE,

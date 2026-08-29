@@ -1,0 +1,16 @@
+# Data-engineering stage dependencies.
+# Install: python -m pip install -r requirements.txt
+
+# --- pipeline (clean / dedup / chunk / eda) ---
+ftfy>=6.0            # encoding repair (clean.py)
+pyarabic>=0.6        # Arabic normalization: alef/ya folding, tatweel, tashkeel (clean.py)
+datasketch>=1.6      # MinHash + LSH near-duplicate detection (dedup.py)
+matplotlib>=3.5      # optional: PNG token histogram (eda.py falls back to ASCII without it)
+
+# --- acquisition: ingest_asas_albalagha.py (EPUB sources) ---
+ebooklib>=0.18       # EPUB reading
+beautifulsoup4>=4.11 # XHTML text extraction
+lxml>=4.9            # parser backend for BeautifulSoup
+
+# Note: pdftotext (poppler) is an external binary used to extract PDF sources before
+# ingest_dialect_dictionary.py runs; it is not a Python package.

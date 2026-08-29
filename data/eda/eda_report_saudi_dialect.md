@@ -81,7 +81,7 @@ tokens/chunk        | histogram                                     count
 
 - Characters in: **1,582,113** -> retained: **1,530,737** (**3.25%** removed overall)
 - Flag threshold: a document is flagged when cleaning removes more than **30%** of its characters
-- Diacritic stripping: **OFF** (default off - two children's books in this batch are fully vocalized)
+- Diacritic stripping: **OFF**
 
 Largest character deltas:
 
@@ -127,7 +127,7 @@ None.
 
 ## 5. Example chunks
 
-_Omitted from this build (`eda.py --no-examples`). This section is the only part of the report that reproduces source text verbatim, and this corpus carries `license: unverified_pending_review`. Regenerate without the flag for a local copy with excerpts._
+_Omitted from this build (`eda.py --no-examples`). This section is the only part of the report that reproduces source text verbatim. Current corpus license: `unverified_pending_review`. Regenerate without the flag for a local copy with excerpts._
 
 ---
 

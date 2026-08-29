@@ -497,6 +497,55 @@ def clean_document(record: dict, strip_diacritics: bool = False, fmt: str = "pro
     return cleaned
 
 
+# --- Corpus scoping ----------------------------------------------------------
+# Cleaning settings (--format, --strip-tatweel, --strip-diacritics) apply to every
+# document in a run, but data/interim/ can hold more than one corpus at a time - the
+# dialect dictionary must KEEP tatweel while the classical lexicon must have it stripped.
+# A run that silently spanned both would apply one corpus's settings to the other and
+# report success, so a run is always scoped to exactly one corpus.
+# تحديد نطاق المدونة: إعدادات التنظيف تسري على كل وثائق التشغيلة، بينما قد يحوي
+# data/interim أكثر من مدونة في وقت واحد، ولكل مدونة إعداداتها. تشغيلة تشمل مدونتين
+# ستطبّق إعدادات إحداهما على الأخرى وتُنهي عملها بنجاح ظاهري، ولذلك تُقصر كل تشغيلة
+# على مدونة واحدة.
+UNSPECIFIED_CORPUS = "(unspecified)"
+
+
+def corpus_of(record: dict) -> str:
+    """Corpus a record belongs to; records predating the field group under one name."""
+    return record.get("corpus") or UNSPECIFIED_CORPUS
+
+
+def scope_to_corpus(items: list, corpus: str | None, stage: str) -> list:
+    """Filter (path, record) pairs to one corpus, or refuse if the scope is ambiguous.
+
+    Never falls back to "process everything": that is the silent-failure this exists to
+    prevent. With one corpus present and no --corpus given the run proceeds unchanged.
+    """
+    groups: dict[str, list] = {}
+    for path, record in items:
+        groups.setdefault(corpus_of(record), []).append((path, record))
+
+    if corpus is not None:
+        if corpus not in groups:
+            raise SystemExit(
+                f"[{stage}] no documents for --corpus {corpus!r}. Found: "
+                + ", ".join(f"{k} ({len(v)})" for k, v in sorted(groups.items()))
+            )
+        return groups[corpus]
+
+    if len(groups) > 1:
+        listing = "\n".join(f"      {k:<20} {len(v)} document(s)"
+                             for k, v in sorted(groups.items()))
+        raise SystemExit(
+            f"[{stage}] REFUSING to run: data/interim holds more than one corpus and no\n"
+            f"    --corpus was given. Settings apply to every document in a run, so one\n"
+            f"    corpus's settings would be applied to the other with no error raised.\n"
+            f"    corpora found:\n{listing}\n"
+            f"    Re-run scoped, e.g. --corpus {sorted(groups)[0]}"
+        )
+    return items
+
+
 # --- Runner ------------------------------------------------------------------
 # المشغِّل: يمر على كل ملفات الإدخال، ويكتب نسخة _cleaned.json لكل وثيقة،
 # ثم تقرير تنظيف مجمَّع.
@@ -511,6 +560,11 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Stage 1: deterministic cleaning.")
     ap.add_argument("--interim-dir", default=INTERIM_DIR)
     ap.add_argument("--report", default=REPORT_PATH)
+    ap.add_argument("--corpus", default=None,
+                    help="Process only documents whose `corpus` field matches. Required "
+                         "whenever data/interim holds more than one corpus - the run is "
+                         "refused rather than silently applying one corpus's settings to "
+                         "another.")
     ap.add_argument("--format", choices=FORMATS, default="prose", dest="fmt",
                     help="Source structure of this batch (default: prose). Chosen explicitly - "
                          "no auto-detection. prose = blank-line paragraphs; dictionary = glossary "
@@ -528,19 +582,24 @@ def main() -> None:
     if not files:
         raise SystemExit(f"No input JSON found under {args.interim_dir}")
 
+    loaded = []
+    for path in files:
+        with open(path, encoding="utf-8") as f:
+            loaded.append((path, json.load(f)))
+    loaded = scope_to_corpus(loaded, args.corpus, "clean")
+    print(f"[clean] corpus: {corpus_of(loaded[0][1])} | {len(loaded)} document(s)")
+
     report = {
         "documents": [],
         "flagged_for_review": [],
-        "config": {"source_format": args.fmt,
+        "config": {"corpus": args.corpus,
+                   "source_format": args.fmt,
                    "strip_diacritics": args.strip_diacritics,
                    "strip_tatweel": args.strip_tatweel,
                    "char_loss_flag_threshold": CHAR_LOSS_FLAG_THRESHOLD},
     }
 
-    for path in files:
-        with open(path, encoding="utf-8") as f:
-            record = json.load(f)
-
+    for path, record in loaded:
         cleaned = clean_document(record, strip_diacritics=args.strip_diacritics,
                                  fmt=args.fmt, strip_tatweel=args.strip_tatweel)
         out_path = path[: -len(".json")] + "_cleaned.json"
