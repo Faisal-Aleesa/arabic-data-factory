@@ -1,0 +1,4 @@
+{"label": "7. grounded — real root, real poet", "source_chunk_id": "asas_albalagha_c0000", "expect": "SUPPORTED", "response": "جاء في مادة (أبد) ما قال الأعشى في ذلك المعنى."}
+{"label": "8. hallucinating — invented root AND invented poet", "source_chunk_id": "asas_albalagha_c0000", "expect": "UNSUPPORTED", "response": "في مادة (زقزق) قال سعدان البصري بيتا في المجاز."}
+{"label": "9. contradiction — corrupted poet name (النابعة for النابغة)", "source_chunk_id": "asas_albalagha_c0000", "expect": "CONTRADICTED", "response": "وقد قال النابعة في هذا المعنى بيتا مشهورا."}
+{"label": "10. AMBIGUOUS — real poet, nisba dropped; real root alongside", "source_chunk_id": "asas_albalagha_c0001", "expect": "PARTIAL", "response": "وقال الحارث بن مرارة في ذلك بيتا، وهو من شواهد مادة (أثر)."}

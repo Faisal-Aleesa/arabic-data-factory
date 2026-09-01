@@ -1,0 +1,24 @@
+# Arabic audit allowlist — phrases triaged as safe to appear in committed files.
+#
+# Used by src/verification/audit_staged_arabic.py. One phrase per line; '#' starts a
+# comment. Phrases are compared after diacritics are stripped and spacing collapsed.
+#
+# Only add a phrase here after deciding it is NOT source content: a generic connective,
+# or material from a corpus that is already lawfully public. Never add a phrase just to
+# silence the audit — the whole point is that it fires on real passages.
+
+# Generic connectives and lexicographic formulae. These occur in ordinary Arabic prose
+# and carry no content from any source.
+قال له
+قال لها
+قال ما
+في مادة
+من الكتاب
+في مجلة
+انظر ص
+
+# Structural marker of أساس البلاغة (classical corpus, CC BY-SA, already public).
+ومن المجاز
+
+# Title of the classical work, recorded in docs/license_manifest.csv.
+أساس البلاغة

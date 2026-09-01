@@ -318,3 +318,52 @@ are not yet cleared.
   context, and EDA reports built without `--no-examples`.
 - When in doubt, gitignore it and say so in the commit message. Metadata, statistics, and
   code are safe to commit; source text is not, until the manifest says otherwise.
+
+### Required: run the staged-Arabic audit
+
+**Before committing anything that touches dialect-derived content, stage your changes and
+run this. It is not optional.**
+
+```bash
+python src/verification/audit_staged_arabic.py
+```
+
+Exit 0 means clean; exit 1 means verbatim rights-pending source text is staged and the
+commit should not proceed as-is.
+
+`.gitignore` already stops the obvious mistake — committing `chunks.jsonl` itself. This
+catches the quiet one: source passages that migrate into **code** while you work.
+Docstring examples, a regex tuned against a real line, a self-test fixture pasted from a
+chunk you were debugging. Those files are not gitignored, so they go public.
+
+This is not hypothetical. Auditing `src/verification/extract_facts.py` before its first
+commit found ten verbatim dialect passages in its docstrings and self-test cases — a
+definition, two section headings, a footnote and two real poet names — all pasted in
+during debugging and all about to be pushed to a public repo. They were replaced with
+invented placeholders (see the `الباب الثامن` convention: use examples that cannot be
+mistaken for citations).
+
+The script reads the **git index**, not the working tree, so it audits exactly what is
+about to be committed. Every multi-word Arabic run is classified against two populations:
+
+| verdict | meaning | action |
+|---|---|---|
+| `HELD_ONLY` | verbatim in a rights-pending source, in no public source | replace with an invented placeholder |
+| `ALSO_IN_PUBLIC` | also present in a lawfully public corpus | review; usually a generic connective or shared classical material |
+| *(allowlisted)* | already triaged in `docs/arabic_audit_allowlist.txt` | not reported |
+
+Occurrence counts are printed to help triage: a phrase appearing hundreds of times is a
+connective, one appearing once or twice is distinctive. Add a phrase to the allowlist only
+after deciding it is genuinely not source content — never merely to silence the audit.
+
+Single words are deliberately not reported; a lone place name, headword or root is not
+meaningfully source text, and reporting them buried the real findings.
+
+The audit refuses to pass (exit 2) if it cannot load a rights-pending corpus — the dialect
+corpus is gitignored and local-only, and an audit with nothing to compare against would
+report "clean" for any input. It falls back to reading the corpus from
+`held/dialect-corpus-release` when the on-disk copy is missing.
+
+`python src/verification/audit_staged_arabic.py --self-test` verifies the detector,
+including a live regression that samples a real held phrase at run time and confirms it is
+still caught.

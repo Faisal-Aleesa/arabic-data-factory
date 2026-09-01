@@ -249,6 +249,12 @@ docs/residue_tokens_review.csv
 data/processed/facts_saudi_dialect.jsonl
 docs/citation_review_saudi_dialect.csv
 
+# Task 3 fact-checker fixtures for the DIALECT corpus. The synthetic candidate
+# responses quote dialect headwords and poet names taken from real chunks, so they
+# carry the same rights status as the corpus. The classical fixture
+# (tests/fixtures/candidates_classical_lexicon.jsonl) is CC BY-SA and is NOT ignored.
+tests/fixtures/candidates_saudi_dialect.jsonl
+
 # Session handoff notes: local continuity between working sessions. NEVER committed.
 # They carry in-progress context, unreleased decisions and rights questions still open,
 # and a local-only commit could be swept into a future push by accident. Keeping them
