@@ -48,11 +48,11 @@ automated check in this project can see it and the LLM judge is the only line of
   rejection_type                signal                            coverage   auto-conf?
   partial_factual_errors        check_facts CONTRADICTED          strong     YES
   less_faithful_reconstruction  similarity percentile drop        strong     YES
+  wrong_formatting              check_format.py conformance       strong     YES
   unsupported_additions         check_facts extension/addition    partial    YES
   verbosity                     length ratio only                 strong     NO
   missing_information           length ratio (+ weak sim signal)  partial    NO
   poor_instruction_following    none dedicated; drifts off-chunk  incidental NO
-  wrong_formatting              none dedicated; may damage content incidental NO
   wrong_register                (no register classifier)          none       NO
   weak_organization             (no structure checker)            none       NO
 
@@ -62,11 +62,17 @@ answer keeps every fact, so verdict and similarity tie and the pair can never re
 AUTO_CONFIRM. Detection and confirmability are different questions and conflating them
 would overstate what this saves.
 
-Only 3 of 9 types can be auto-confirmed. For the other 6 this module still catches a
-BROKEN pair (rejected scoring better than chosen) but cannot confirm a good one, and the
-judge carries the load. Whoever builds real DPO generation should know this before
-choosing the rejection_type mix: a set weighted toward the bottom six will produce almost
-no AUTO_CONFIRMs and will not reduce judge spend.
+4 of 9 types can be auto-confirmed, up from 3 once check_format.py replaced the stub.
+For the other 5 this module still catches a BROKEN pair (rejected scoring better than
+chosen) but cannot confirm a good one, and the judge carries the load. A rejection_type
+mix weighted toward the bottom five will produce almost no AUTO_CONFIRMs and will not
+reduce judge spend.
+
+Format coverage is NOT uniform across format_types. MEASURED: both corpora are 100%
+`dictionary_entry`, so that is the only value validated against real corpus content.
+`prose`, `verse`, `list` and `footnote_block` are implemented against chunk.py's own
+assignment rules and exercised only by synthetic cases - weaker evidence, and it should
+not be reported as if it were equal.
 
 Measured outcomes on the synthetic set
 --------------------------------------
@@ -74,10 +80,14 @@ Measured outcomes on the synthetic set
 pairs per corpus. Identical results on the two corpora, which is what a rule keyed on
 signals rather than surface text should produce:
 
-  AUTO_CONFIRM     3   partial_factual_errors, less_faithful_reconstruction,
-                       unsupported_additions
-  NEEDS_JUDGE      6   the other six types
+  AUTO_CONFIRM     4   partial_factual_errors, less_faithful_reconstruction,
+                       unsupported_additions, wrong_formatting
+  NEEDS_JUDGE      5   the other five types
   FLAG_SUSPICIOUS  2   the broken pairs only
+
+Plus 4 format probes per corpus, also identical across the two: 3 AUTO_CONFIRM and 1
+FLAG_SUSPICIOUS - the last being the control, where both halves are equally well-formed
+and the declared formatting weakness therefore cannot be corroborated.
 
 The broken pairs exist because zero FLAG_SUSPICIOUS on well-formed input only proves the
 flag does not fire spuriously - not that it fires when it should:
@@ -87,14 +97,26 @@ flag does not fire spuriously - not that it fires when it should:
   mislabeled          both halves identical while claiming a factual error
                       -> tie on a detectable type with nothing corroborating it, caught
 
-FORMAT CHECKING IS A REAL GAP, NOT SKIPPED SILENTLY
----------------------------------------------------
-Check 3 in the brief is "chosen should match its declared format_type at least as well
-as rejected does". No format checker exists in this project yet - verify_sft.py marks
-every record `format_validated: false` for the same reason. `check_format()` below is a
-declared hook that returns 'unavailable' and is wired into the verdict, so a
-`wrong_formatting` pair can never be AUTO_CONFIRMed. When a real checker is built it
-plugs in here and the coverage table entry changes from `none` to whatever it earns.
+Format checking, and why it needed its own direction rule
+--------------------------------------------------------
+`check_format()` now delegates to check_format.py, which tests structural conformance
+against the pipeline's own format vocabulary. It replaced a stub returning 'unavailable'.
+
+A pure formatting failure ties on verdict BY CONSTRUCTION: the malformed half carries
+identical facts and identical vocabulary, so fact and similarity checks see nothing.
+Requiring a verdict gap would have capped wrong_formatting at NEEDS_JUDGE forever,
+defeating the point of building the checker. Hence `axis_win`: a dedicated, deterministic
+check showing chosen strictly better on the declared axis can carry a tie to
+AUTO_CONFIRM. Format qualifies; the length signal deliberately does not, being a ratio
+against a hand-picked bound rather than a binary structural fact. `axis_win` can never
+override a rejected-better pair.
+
+INDEPENDENCE, measured rather than assumed: on the classical corpus a probe whose halves
+differ ONLY by entry markers scored PASS/SUPPORTED/pct 100.0 on BOTH sides - fact verdict
+and similarity percentile identical - and only the format check separated them. On the
+dialect corpus the same probe is partially COUPLED: check_facts detects lexical items
+only when marked, so stripping the markers also degrades the fact axis. The independence
+is real but corpus-dependent.
 
 Length is a FLAG, never a failure
 ---------------------------------
@@ -114,6 +136,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import check_facts as cf                                        # noqa: E402
 import check_similarity as csim                                 # noqa: E402
 import verify_sft as vs                                         # noqa: E402
+import check_format as cfmt                                     # noqa: E402
 
 CHUNKS = csim.CHUNKS
 
@@ -170,7 +193,7 @@ DETECTABILITY = {
     'missing_information': 'partial',
     'unsupported_additions': 'partial',
     'poor_instruction_following': 'incidental',
-    'wrong_formatting': 'incidental',
+    'wrong_formatting': 'strong',
     'wrong_register': 'none',
     'weak_organization': 'none',
 }
@@ -179,12 +202,13 @@ DETECTABILITY = {
 # ------------------------------------------------------------------ format hook (gap)
 
 def check_format(response, format_type):
-    """Declared hook. No format checker exists yet - see the module docstring.
+    """Structural format conformance. Delegates to check_format.py.
 
-    Returns 'unavailable' rather than a pass, so nothing downstream can mistake the
-    absence of a check for a clean result.
+    Was a stub returning 'unavailable', which made wrong_formatting the one charter
+    rejection_type that could never be corroborated. Returns the status string; the full
+    feature detail is available from check_format.check_format().
     """
-    return 'unavailable'
+    return cfmt.check_format(response, format_type)['status']
 
 
 # ------------------------------------------------------------------------ pure logic
@@ -216,6 +240,22 @@ def length_consistency(rejection_type, signal):
             'declared %r implies %s, observed %s' % (rejection_type, expected, signal))
 
 
+def similarity_comparable(chosen_result, rejected_result):
+    """Is a similarity percentile difference between these two meaningful?
+
+    No, when NEITHER side has any fact grounding. A percentile is a rank against a
+    baseline of wrong chunks; between two responses that are both NO_FACT_COVERAGE there
+    is nothing anchoring either of them to the source, and the ordering is noise.
+
+    This is not a theoretical worry. Two format probes flipped verdict between the two
+    corpora on identical logic - one AUTO_CONFIRM here and FLAG_SUSPICIOUS there, and
+    the reverse for the other - purely on similarity ordering between two ungrounded
+    halves. Same rule, opposite outcomes, which is what noise looks like.
+    """
+    return not (chosen_result.get('verdict') == vs.NO_FACT_COVERAGE
+                and rejected_result.get('verdict') == vs.NO_FACT_COVERAGE)
+
+
 def direction(chosen_result, rejected_result, tie_margin=SIMILARITY_TIE_MARGIN):
     """Which side is better, and on what evidence. Pure over two verdict dicts."""
     rc = vs.VERDICT_RANK.get(chosen_result.get('verdict'), 9)
@@ -224,6 +264,10 @@ def direction(chosen_result, rejected_result, tie_margin=SIMILARITY_TIE_MARGIN):
         return 'chosen_better_verdict'
     if rr < rc:
         return 'rejected_better_verdict'
+    if not similarity_comparable(chosen_result, rejected_result):
+        # Verdicts tie and similarity carries no information - report the tie rather
+        # than manufacture a direction from noise.
+        return 'tie'
     pc = (chosen_result.get('similarity') or {}).get('percentile')
     pr = (rejected_result.get('similarity') or {}).get('percentile')
     if pc is None or pr is None:
@@ -235,7 +279,8 @@ def direction(chosen_result, rejected_result, tie_margin=SIMILARITY_TIE_MARGIN):
     return 'tie'
 
 
-def corroborates(rejection_type, chosen_result, rejected_result, length_sig):
+def corroborates(rejection_type, chosen_result, rejected_result, length_sig,
+                 format_relation=None):
     """Do the automated signals corroborate the weakness the pair CLAIMS to have?
 
     Returns True, False, or None when this tooling cannot see the declared type at all.
@@ -264,6 +309,11 @@ def corroborates(rejection_type, chosen_result, rejected_result, length_sig):
             return False
         return (pc - pr) > SIMILARITY_TIE_MARGIN
 
+    if rejection_type == 'wrong_formatting':
+        # Corroborated only when chosen conforms and rejected does not. Both-match or
+        # both-mismatch means the declared weakness is not present as declared.
+        return format_relation == 'chosen_better'
+
     if rejection_type == 'verbosity':
         return length_sig == 'rejected_longer'
 
@@ -277,8 +327,20 @@ def corroborates(rejection_type, chosen_result, rejected_result, length_sig):
 
 
 def combine_dpo(direction_value, corroborated, length_consistent, format_status,
-                declared_detectability):
-    """Pure decision function. No IO, no model - the whole rule in one place."""
+                declared_detectability, axis_win=False):
+    """Pure decision function. No IO, no model - the whole rule in one place.
+
+    `axis_win` means a DEDICATED, DETERMINISTIC check shows chosen strictly better on
+    the declared axis. Only format conformance qualifies today. It matters because a
+    pure formatting failure ties on verdict by construction - the malformed half carries
+    the same facts and the same vocabulary, so fact and similarity checks see no
+    difference - and without this a correctly detected wrong_formatting pair could never
+    be confirmed.
+
+    Length is deliberately NOT an axis_win. Format conformance is a binary structural
+    fact with no threshold to tune; the length signal is a ratio against a hand-picked
+    bound, and a padded answer is not wrong in the way a malformed one is.
+    """
     if direction_value in ('rejected_better_verdict', 'rejected_better_similarity'):
         return (FLAG_SUSPICIOUS,
                 'rejected scores better than chosen (%s) - the pair is mislabeled or the '
@@ -290,6 +352,11 @@ def combine_dpo(direction_value, corroborated, length_consistent, format_status,
         # pairs as broken and make the signal useless. And `verbosity` ties on verdict
         # BY CONSTRUCTION - a padded answer keeps every fact - yet is detected by the
         # length signal, so a corroborated tie is evidence the pair is fine, not broken.
+        if axis_win and corroborated is True and declared_detectability == 'strong':
+            return (AUTO_CONFIRM,
+                    'verdict and similarity tie - as they must for this weakness - but a '
+                    'dedicated deterministic check shows chosen strictly better on the '
+                    'declared axis')
         if corroborated is True:
             return (NEEDS_JUDGE,
                     'verdict and similarity tie, but the declared weakness IS '
@@ -310,6 +377,10 @@ def combine_dpo(direction_value, corroborated, length_consistent, format_status,
                 'likely mislabeled or the rejection is not actually worse')
 
     if direction_value == 'chosen_better_similarity':
+        if axis_win and corroborated is True and declared_detectability == 'strong':
+            return (AUTO_CONFIRM,
+                    'a dedicated deterministic check shows chosen strictly better on the '
+                    'declared axis, and similarity agrees')
         return (NEEDS_JUDGE,
                 'chosen leads on similarity only, not on verdict - too weak to confirm '
                 'automatically')
@@ -320,8 +391,6 @@ def combine_dpo(direction_value, corroborated, length_consistent, format_status,
                 'chosen outranks rejected, but coverage for this rejection_type is %r, '
                 'so the claimed weakness cannot be corroborated - the gap may be on an '
                 'unrelated axis' % declared_detectability)
-    if format_status == 'unavailable' and declared_detectability == 'format':
-        return NEEDS_JUDGE, 'no format checker exists to corroborate this pair'
     if corroborated is None:
         return (NEEDS_JUDGE,
                 'chosen outranks rejected, but the declared weakness type cannot be '
@@ -359,13 +428,15 @@ def check_pair(record, ctx):
     lens = length_stats(record['chosen'], record['rejected'])
     lsig = length_signal(lens['ratio'])
     lcons, lnote = length_consistency(rtype, lsig)
-    fmt_chosen = check_format(record['chosen'], record.get('format_type'))
-    fmt_rejected = check_format(record['rejected'], record.get('format_type'))
+    fmt_chosen = fmt_rejected = None      # filled from the comparison below
 
     d = direction(chosen, rejected)
-    corr = corroborates(rtype, chosen, rejected, lsig)
+    fmt_relation, fmt_c_detail, fmt_r_detail = cfmt.compare_format(
+        record['chosen'], record['rejected'], record.get('format_type'))
+    corr = corroborates(rtype, chosen, rejected, lsig, fmt_relation)
     detect = DETECTABILITY.get(rtype, 'none')
-    verdict, reason = combine_dpo(d, corr, lcons, fmt_chosen, detect)
+    axis_win = (rtype == 'wrong_formatting' and fmt_relation == 'chosen_better')
+    verdict, reason = combine_dpo(d, corr, lcons, fmt_relation, detect, axis_win)
 
     chunk = ctx.chunks.get(cid)
     if chunk is not None and record.get('source_region') != chunk.get('region'):
@@ -383,8 +454,11 @@ def check_pair(record, ctx):
         'rejected_pct': (rejected.get('similarity') or {}).get('percentile'),
         'length': lens, 'length_signal': lsig,
         'length_consistency': lcons, 'length_note': lnote,
-        'format_check': {'chosen': fmt_chosen, 'rejected': fmt_rejected,
-                         'note': 'no format checker exists yet - this is a real gap'},
+        'format_check': {'chosen': fmt_c_detail['status'],
+                         'rejected': fmt_r_detail['status'],
+                         'relation': fmt_relation,
+                         'chosen_reason': fmt_c_detail.get('reason'),
+                         'rejected_reason': fmt_r_detail.get('reason')},
         'record_warnings': warnings,
     }
 
@@ -478,6 +552,40 @@ def run_self_test():
             print('  [FAIL] undetectable rejection_type reached AUTO_CONFIRM')
             ok = False
 
+    # similarity between two ungrounded responses is noise, not a direction
+    ung_a = {'verdict': vs.NO_FACT_COVERAGE, 'similarity': {'percentile': 20.0}}
+    ung_b = {'verdict': vs.NO_FACT_COVERAGE, 'similarity': {'percentile': 90.0}}
+    if direction(ung_a, ung_b) != 'tie':
+        print('  [FAIL] ungrounded-vs-ungrounded similarity produced a direction')
+        ok = False
+    if direction(ung_b, ung_a) != 'tie':
+        print('  [FAIL] ungrounded direction is not symmetric'); ok = False
+    # but a verdict gap is still a direction even when one side is ungrounded
+    gr = {'verdict': vs.PASS, 'similarity': {'percentile': 20.0}}
+    if direction(gr, ung_b) != 'chosen_better_verdict':
+        print('  [FAIL] verdict gap suppressed by the ungrounded guard'); ok = False
+    if similarity_comparable(gr, ung_b) is not True:
+        print('  [FAIL] one grounded side should make similarity comparable'); ok = False
+
+    # axis_win: a deterministic check can carry a tie to AUTO_CONFIRM
+    axis_cases = [
+        ('tie', True, 'strong', True, AUTO_CONFIRM),
+        ('tie', True, 'strong', False, NEEDS_JUDGE),      # no axis win -> not confirmed
+        ('tie', False, 'strong', True, FLAG_SUSPICIOUS),  # axis win but not corroborated
+        ('tie', True, 'partial', True, NEEDS_JUDGE),      # only `strong` may carry a tie
+        ('chosen_better_similarity', True, 'strong', True, AUTO_CONFIRM),
+    ]
+    for d, corr, det, aw, want in axis_cases:
+        got, _ = combine_dpo(d, corr, 'not_applicable', 'chosen_better', det, aw)
+        if got != want:
+            print('  [FAIL] axis_win(%s, corr=%s, det=%s, aw=%s) -> %s, expected %s'
+                  % (d, corr, det, aw, got, want)); ok = False
+    # axis_win must never override a rejected-better pair
+    for d in ('rejected_better_verdict', 'rejected_better_similarity'):
+        v, _ = combine_dpo(d, True, 'consistent', 'chosen_better', 'strong', True)
+        if v != FLAG_SUSPICIOUS:
+            print('  [FAIL] axis_win overrode %s' % d); ok = False
+
     # length signals
     for ratio, want in ((2.0, 'rejected_longer'), (1.4, 'rejected_longer'),
                         (1.0, 'comparable'), (0.7, 'rejected_shorter'),
@@ -498,10 +606,25 @@ def run_self_test():
         if t not in DETECTABILITY:
             print('  [FAIL] no detectability entry for %r' % t); ok = False
 
-    # format hook must never report a pass
-    if check_format('anything', 'dictionary_entry') != 'unavailable':
-        print('  [FAIL] check_format must report unavailable until one is built')
-        ok = False
+    # format checking is real now: it must discriminate, and must never pass an
+    # unrecognised format_type
+    if check_format('الكلمة (خب) وهي أرض مستوية.', 'dictionary_entry') != cfmt.MATCH:
+        print('  [FAIL] a well-formed entry should match'); ok = False
+    if check_format('خب أرض مستوية بلا بنية', 'dictionary_entry') != cfmt.MISMATCH:
+        print('  [FAIL] undifferentiated text should mismatch'); ok = False
+    if check_format('أي نص', 'table') == cfmt.MATCH:
+        print('  [FAIL] an unrecognised format_type must never match'); ok = False
+
+    # wrong_formatting corroborates only when chosen conforms and rejected does not
+    fmt_cases = [('chosen_better', True), ('rejected_better', False),
+                 ('both_match', False), ('both_mismatch', False),
+                 ('undecidable', False)]
+    for rel, want in fmt_cases:
+        got = corroborates('wrong_formatting', _R(vs.PASS, 90), _R(vs.PASS, 90),
+                           'comparable', rel)
+        if got != want:
+            print('  [FAIL] wrong_formatting corroboration on %s -> %s, expected %s'
+                  % (rel, got, want)); ok = False
 
     # schema validation
     bad = check_pair({'prompt': 'x'}, None)
