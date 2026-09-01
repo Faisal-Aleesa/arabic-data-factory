@@ -1,0 +1,12 @@
+# Verification-stage dependencies (Task 3). NOT required for the data-engineering
+# pipeline, which stays dependency-light and model-free - install these only if you are
+# running src/verification/check_similarity.py.
+#
+#     python -m pip install -r requirements-verification.txt
+#
+# This pulls torch (~600 MB installed). check_facts.py, extract_facts.py and
+# audit_staged_arabic.py need none of it and run on the standard library plus numpy.
+
+sentence-transformers>=3.0   # embedding backend for check_similarity.py
+torch>=2.0                   # sentence-transformers runtime (CPU wheel is sufficient)
+numpy>=1.24                  # cosine / percentile arithmetic
