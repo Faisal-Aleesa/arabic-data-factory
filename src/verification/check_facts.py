@@ -36,9 +36,29 @@ that is a sub- or super-string of a real fact is reported as PARTIAL rather than
 PARTIAL means "a human should look", not "wrong".
 
   SUPPORTED   exact match to a known fact (after normalization)
-  PARTIAL     sub/superstring of a known fact - paraphrase or partial name
+  PARTIAL     a whole-token abbreviation or extension of a known fact
   UNSUPPORTED no fact of this type in the chunk to match against
   CONTRADICTED conflicts with a fact of the same type that IS present
+
+Sub/superstring is NOT symmetric
+-------------------------------
+An earlier version treated any character containment as PARTIAL, which conflated two
+opposite things. Dropping material from a real name ("الحارث بن مرارة" for
+"الحارث بن مرارة الحنظلي") invents nothing. ADDING material does, and it is precisely the
+shape the DPO stage generates deliberately as an "unsupported additions" weakness -
+so reading it as a legitimate fuller form was exactly backwards.
+
+The two are separated by TOKEN ALIGNMENT rather than character containment:
+
+  abbreviation  response tokens are a contiguous run of the fact's tokens -> PARTIAL
+  extension     the fact's tokens survive intact and whole tokens are added -> PARTIAL,
+                or CONTRADICTED when chunk_text is supplied and an added token does not
+                occur in the source at all
+  corruption    containment holds at character level but a token was altered, i.e. junk
+                welded onto a word ("التغلبي" -> "التغلبيّي") -> CONTRADICTED
+
+`chunk_text` is optional. Without it an extension stays PARTIAL, because there is no
+corpus evidence to justify a hard call; verify_sft.py supplies it.
 
 The response's overall verdict is the worst of its assertions.
 
@@ -191,7 +211,59 @@ def response_assertions(text, corpus):
 
 # ------------------------------------------------------------------------ the check
 
-def _judge(assertion, by_type, region_ctx):
+# ------------------------------------------------ sub/superstring relationship analysis
+#
+# Plain containment conflates two opposite situations, and probe C-E showed the cost:
+#
+#   response SHORTER than the fact   "الحارث بن مرارة" vs "الحارث بن مرارة الحنظلي"
+#       The response drops the nisba. It asserts a subset of what the source says, so
+#       nothing has been invented. PARTIAL is right.
+#
+#   response LONGER than the fact    "التغلبيّي" vs "التغلبي"
+#       The response ADDS material. This is the shape the DPO stage deliberately
+#       generates as an "unsupported additions" weakness, and reading it as a
+#       legitimate fuller form is exactly backwards.
+#
+# The two are separated by TOKEN ALIGNMENT rather than by character containment:
+#
+#   extension    every token of the known fact survives intact and whole new tokens are
+#                appended - a plausible fuller name (الحنظلي added to الحارث بن مرارة)
+#   corruption   containment holds at the character level but a token has been altered,
+#                so the added characters are junk welded onto an existing word
+#
+# Character containment cannot tell these apart; token alignment can, and it does not
+# need a corpus lookup to do it. When the chunk text IS available (verify_sft.py passes
+# it) an extension is checked further: added tokens absent from the source are an
+# unsupported addition, not a fuller form.
+
+def _token_run(big, small):
+    """Index where `small` occurs as a contiguous run inside `big`, else -1."""
+    if not small or len(small) > len(big):
+        return -1
+    for i in range(len(big) - len(small) + 1):
+        if big[i:i + len(small)] == small:
+            return i
+    return -1
+
+
+def _relation(resp_key, known_key):
+    """Classify how a response value relates to a known fact value.
+
+    Returns 'equal', 'abbreviation', 'extension', 'corruption', or None.
+    """
+    if resp_key == known_key:
+        return 'equal'
+    rt, kt = resp_key.split(), known_key.split()
+    if _token_run(kt, rt) >= 0:
+        return 'abbreviation'          # response is a whole-token subset of the fact
+    if _token_run(rt, kt) >= 0:
+        return 'extension'             # fact survives intact, whole tokens added
+    if resp_key in known_key or known_key in resp_key:
+        return 'corruption'            # characters welded onto/into a token
+    return None
+
+
+def _judge(assertion, by_type, region_ctx, chunk_tokens=None):
     """Verdict for one assertion against the chunk's facts of the same type."""
     a_type, a_val = assertion['type'], assertion['value']
     key = norm_key(a_val)
@@ -213,9 +285,37 @@ def _judge(assertion, by_type, region_ctx):
         if k == key:
             return SUPPORTED, 'exact match: %s' % orig
 
+    # Directional analysis, strongest signal first: a corruption anywhere outranks an
+    # abbreviation elsewhere, because the corrupted claim is the one that is wrong.
+    relations = []
     for orig, k in zip(known, known_keys):
-        if key and k and (key in k or k in key):
-            return PARTIAL, 'sub/superstring of known fact: %s' % orig
+        if key and k:
+            rel = _relation(key, k)
+            if rel:
+                relations.append((rel, orig, k))
+
+    for rel, orig, k in relations:
+        if rel == 'corruption':
+            return (CONTRADICTED,
+                    'appended/altered characters on a known fact %r - the source token '
+                    'was modified, not extended' % orig)
+
+    for rel, orig, k in relations:
+        if rel == 'extension':
+            added = [t for t in key.split() if t not in k.split()]
+            if chunk_tokens is not None and added:
+                unsupported = [t for t in added if t not in chunk_tokens]
+                if unsupported:
+                    return (CONTRADICTED,
+                            'extends known fact %r with token(s) absent from the source: '
+                            '%s' % (orig, ' '.join(unsupported)))
+            return (PARTIAL,
+                    'whole-token extension of known fact: %s (added: %s)'
+                    % (orig, ' '.join(added) or '-'))
+
+    for rel, orig, k in relations:
+        if rel == 'abbreviation':
+            return PARTIAL, 'whole-token abbreviation of known fact: %s' % orig
 
     if a_type in PRECISE_TYPES:
         if known:
@@ -233,7 +333,7 @@ def _judge(assertion, by_type, region_ctx):
     return UNSUPPORTED, 'no %s in chunk matches' % a_type
 
 
-def check_response(response, chunk_id, index, corpus):
+def check_response(response, chunk_id, index, corpus, chunk_text=None):
     row = index.get(chunk_id)
     if row is None:
         return {'source_chunk_id': chunk_id, 'verdict': 'UNKNOWN_CHUNK',
@@ -245,9 +345,10 @@ def check_response(response, chunk_id, index, corpus):
     region_ctx = {'region': row['source_region'],
                   'crossrefs': by_type.get('cross_dialect_reference', [])}
 
+    chunk_tokens = set(norm_key(chunk_text).split()) if chunk_text else None
     results = []
     for a in response_assertions(response, corpus):
-        verdict, why = _judge(a, by_type, region_ctx)
+        verdict, why = _judge(a, by_type, region_ctx, chunk_tokens)
         results.append({'type': a['type'], 'value': a['value'],
                         'verdict': verdict, 'reason': why})
 
@@ -277,6 +378,8 @@ def _fake_index():
                             {'type': 'page_reference', 'value': '39', 'position_in_text': 1},
                             {'type': 'citation_authority', 'value': 'مرزوق الفلاني',
                              'position_in_text': 2},
+                            {'type': 'citation_authority', 'value': 'سالم بن حمد الفلاني',
+                             'position_in_text': 5},
                             {'type': 'entry_headword', 'value': 'ططط', 'position_in_text': 3},
                             {'type': 'cross_dialect_reference', 'value': 'الحجاز',
                              'position_in_text': 4}]}}
@@ -293,6 +396,24 @@ SELF_TEST_CASES = [
     ('قال مرزوق الفلانى كلاما.', SUPPORTED, 'ya/alef-maqsura folding makes this the same name'),
     ('قال مرزوق الغلاني كلاما.', CONTRADICTED, 'near-miss of a real name = corrupted, not invented'),
     ('قال سعدون الخيالي كلاما.', UNSUPPORTED, 'unrelated name, no near match'),
+    # --- sub/superstring direction: the C-E append-corruption regression ---
+    # A shorter form of a real name drops material; nothing is invented.
+    ('قال سالم بن حمد كلاما.', PARTIAL,
+     'whole-token abbreviation of a longer known name stays PARTIAL'),
+    # A longer form that leaves every known token intact is a plausible fuller name.
+    # Uses the lexical path, whose capture is the whole marked span - the citation regex
+    # caps how much of a name it will take, so it cannot express this case.
+    ('الكلمة (ططط الكبير) معناها كذا.', PARTIAL,
+     'whole-token extension of a known headword stays PARTIAL'),
+    # Characters welded onto a known token are a corruption, NOT a fuller form. This is
+    # probe C-E's shape (التغلبي -> التغلبيّي) and it must not read as PARTIAL.
+    ('الكلمة (طططط) معناها كذا.', CONTRADICTED,
+     'appended characters on a known token are a corruption'),
+    ('الكلمة (اططط) معناها كذا.', CONTRADICTED,
+     'prepended characters on a known token are a corruption'),
+    ('قال سالم بن حمد الفلانيي كلاما.', CONTRADICTED,
+     'corruption of the final token of a longer name - the C-E shape'),
+
     ('الكلمة (ططط) معناها كذا.', SUPPORTED, 'marked lexical item matches a headword'),
     ('الكلمة (زززز) معناها كذا.', UNSUPPORTED, 'marked lexical item not in the chunk'),
     ('هذه الكلمة في لهجة نجد.', SUPPORTED, 'region claim matches the chunk region'),
@@ -313,6 +434,42 @@ def run_self_test():
             for a in got['assertions']:
                 print('           %-22s %-12s %s' % (a['type'], a['verdict'], a['reason']))
             ok = False
+    # --- extension validated against the chunk text, when it is available ---
+    # An added token the SOURCE also contains is a plausible fuller form.
+    r = check_response('الكلمة (ططط الكبير) معناها كذا.', 't_c0001', idx, 'saudi_dialect',
+                       chunk_text='نص فيه ططط الكبير مذكور صراحة')
+    if r['verdict'] != PARTIAL:
+        print('  [FAIL] extension with a source-supported token should be PARTIAL, got %s'
+              % r['verdict'])
+        ok = False
+    # An added token absent from the source is an unsupported addition - the DPO
+    # "unsupported additions" weakness shape.
+    r = check_response('الكلمة (ططط الخيالي) معناها كذا.', 't_c0001', idx, 'saudi_dialect',
+                       chunk_text='نص فيه ططط وحده دون اي اضافة')
+    if r['verdict'] != CONTRADICTED:
+        print('  [FAIL] extension with an unsourced token should be CONTRADICTED, got %s'
+              % r['verdict'])
+        ok = False
+    # Without chunk_text the same case stays PARTIAL - no corpus evidence, no hard call.
+    r = check_response('الكلمة (ططط الخيالي) معناها كذا.', 't_c0001', idx, 'saudi_dialect')
+    if r['verdict'] != PARTIAL:
+        print('  [FAIL] extension without chunk_text should stay PARTIAL, got %s'
+              % r['verdict'])
+        ok = False
+
+    # relation classifier, directly
+    for a, b, want in ((norm_key('الحارث بن مرارة'), norm_key('الحارث بن مرارة الحنظلي'),
+                        'abbreviation'),
+                       (norm_key('الحارث بن مرارة الحنظلي'), norm_key('الحارث بن مرارة'),
+                        'extension'),
+                       (norm_key('التغلبيي'), norm_key('التغلبي'), 'corruption'),
+                       (norm_key('الاعشى'), norm_key('الاعشى'), 'equal'),
+                       (norm_key('النابغه'), norm_key('الفرزدق'), None)):
+        got = _relation(a, b)
+        if got != want:
+            print('  [FAIL] _relation(%r, %r) = %r, expected %r' % (a, b, got, want))
+            ok = False
+
     # an unknown chunk id must be reported, not silently pass
     if check_response('نص', 'nope', idx, 'saudi_dialect')['verdict'] != 'UNKNOWN_CHUNK':
         print('  [FAIL] unknown chunk_id not reported')

@@ -80,6 +80,10 @@ What this CANNOT do yet
     asserting it reads as UNSUPPORTED. UNSUPPORTED counts must be read against
     docs/citation_review_*.csv, not as a hallucination rate.
   * drift and hallucination are not separable by similarity; both read as ungrounded.
+  * this module passes chunk_text into check_facts, which enables its stricter reading
+    of extensions: a token added to a known fact that does not occur in the source is
+    an unsupported addition, not a fuller form. check_facts run standalone, without
+    chunk_text, keeps such a case at PARTIAL.
   * on the dialect corpus similarity partly tracks lexical overlap, so a correct
     reworded paraphrase can score like a hallucination.
 - Similarity requires torch (requirements-verification.txt). Without it the module still
@@ -280,7 +284,12 @@ def verify_response(response, source_chunk_id, ctx):
 
     Deliberately knows nothing about SFT records: give it a string and a chunk id.
     """
-    facts = cf.check_response(response, source_chunk_id, ctx.facts, ctx.corpus)
+    # Pass the chunk text so check_facts can tell a plausible fuller name from an
+    # unsupported addition: a token added to a known fact is only a legitimate extension
+    # if the source actually contains it.
+    chunk_rec = ctx.chunks.get(source_chunk_id)
+    facts = cf.check_response(response, source_chunk_id, ctx.facts, ctx.corpus,
+                              chunk_text=chunk_rec.get('chunk_text') if chunk_rec else None)
     sim = ctx.similarity(response, source_chunk_id)
     pct = sim['percentile'] if sim else None
     band = ctx.bands.band(pct)
