@@ -1,0 +1,8 @@
+# Shell hooks must keep LF endings. Checked out with CRLF they fail on Linux and macOS
+# with "bad interpreter: /bin/sh^M" - and the hooks are committed precisely so they
+# travel to other people's machines.
+.githooks/** text eol=lf
+
+# Corpus and fact tables are newline-delimited JSON consumed by scripts; keep them LF
+# so checksums and line counts are stable across platforms.
+*.jsonl text eol=lf

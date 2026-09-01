@@ -1,0 +1,70 @@
+#!/bin/sh
+# Pre-commit gate: licence containment audit.
+#
+# Committed to the repo (not .git/hooks/, which does not survive a clone) and activated
+# per-clone with:
+#
+#     git config core.hooksPath .githooks
+#
+# See the README's "Before you commit" section.
+#
+# Exit handling, and why exit 2 does not block:
+#
+#   0  clean                 -> commit proceeds
+#   1  rights-pending text   -> commit BLOCKED
+#   2  no corpus to check    -> WARN, commit proceeds
+#
+# Exit 2 means the rights-pending corpus could not be loaded. That is the normal state on
+# a fresh clone: the dialect corpus is gitignored and the held branch is local-only, so a
+# teammate who has never had the source text also has nothing to leak from it. Blocking
+# every commit on those machines would get the hook disabled within a day, which is worse
+# than a warning. On a machine that DOES have the corpus, the audit runs and exit 1 bites.
+
+set -u
+
+ROOT=$(git rev-parse --show-toplevel) || exit 0
+AUDIT="$ROOT/src/verification/audit_staged_arabic.py"
+
+[ -f "$AUDIT" ] || exit 0          # audit not present on this branch; nothing to enforce
+
+if command -v python >/dev/null 2>&1; then
+    PY=python
+elif command -v python3 >/dev/null 2>&1; then
+    PY=python3
+else
+    echo "pre-commit: python not found; skipping the licence audit." >&2
+    echo "            Run it manually before pushing:" >&2
+    echo "            python src/verification/audit_staged_arabic.py" >&2
+    exit 0
+fi
+
+# The audit prints Arabic; force UTF-8 so the report is readable on Windows consoles.
+PYTHONIOENCODING=utf-8 "$PY" "$AUDIT"
+STATUS=$?
+
+if [ $STATUS -eq 1 ]; then
+    echo "" >&2
+    echo "==================================================================" >&2
+    echo " COMMIT BLOCKED - verbatim rights-pending source text is staged." >&2
+    echo "" >&2
+    echo " Replace each HELD_ONLY run above with an invented placeholder," >&2
+    echo " or, if triage shows it is generic, add it to" >&2
+    echo " docs/arabic_audit_allowlist.txt and explain why." >&2
+    echo "" >&2
+    echo " Do not use --no-verify to get past this. The audit exists because" >&2
+    echo " source passages migrate into code during debugging, and code is" >&2
+    echo " not gitignored." >&2
+    echo "==================================================================" >&2
+    exit 1
+fi
+
+if [ $STATUS -eq 2 ]; then
+    echo "" >&2
+    echo "pre-commit: WARNING - the licence audit could not load a rights-pending" >&2
+    echo "            corpus, so nothing was checked. This is expected on a fresh" >&2
+    echo "            clone. If you DO have the dialect corpus locally, stop and" >&2
+    echo "            investigate before committing." >&2
+    exit 0
+fi
+
+exit $STATUS

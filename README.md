@@ -319,6 +319,32 @@ are not yet cleared.
 - When in doubt, gitignore it and say so in the commit message. Metadata, statistics, and
   code are safe to commit; source text is not, until the manifest says otherwise.
 
+### Install the pre-commit hook (one line, do this after cloning)
+
+```bash
+git config core.hooksPath .githooks
+```
+
+The hook lives in `.githooks/pre-commit` and is committed, so it travels with the repo —
+but `core.hooksPath` is per-clone config, so **every clone needs that one line once**.
+Without it the hook file is inert and the audit below is honour-system only.
+
+Once installed, every `git commit` runs the audit against your staged changes:
+
+| audit exit | hook behaviour |
+|---|---|
+| 0 — clean | commit proceeds |
+| 1 — rights-pending text staged | **commit blocked** |
+| 2 — no corpus available to check against | warns, commit proceeds |
+
+Exit 2 is the normal state on a fresh clone: the dialect corpus is gitignored and the
+held branch is local-only, so a machine that has never held the source text has nothing
+to leak from it. Blocking every commit there would just get the hook turned off. On a
+machine that does have the corpus, exit 1 bites.
+
+`git commit --no-verify` bypasses the hook. Don't — the audit exists precisely because
+source passages migrate into code during debugging, and code is not gitignored.
+
 ### Required: run the staged-Arabic audit
 
 **Before committing anything that touches dialect-derived content, stage your changes and
