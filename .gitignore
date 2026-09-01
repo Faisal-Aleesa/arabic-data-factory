@@ -237,3 +237,11 @@ data/eda/*_with_examples.md
 
 # Residue review log: its context column quotes readable source text
 docs/residue_tokens_review.csv
+
+# Session handoff notes: local continuity between working sessions. NEVER committed.
+# They carry in-progress context, unreleased decisions and rights questions still open,
+# and a local-only commit could be swept into a future push by accident. Keeping them
+# out of git entirely is the stronger guarantee. They persist on disk; they never enter
+# history. Pattern covers any future handoff file, not just the current one.
+docs/*HANDOFF*.md
+docs/*handoff*.md
