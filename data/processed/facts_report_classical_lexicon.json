@@ -1,0 +1,22 @@
+{
+  "corpus": "classical_lexicon",
+  "input": "data/processed/chunks_asas_albalagha.jsonl",
+  "output": "data/processed/facts_classical_lexicon.jsonl",
+  "chunks_in": 394,
+  "chunks_with_facts": 394,
+  "chunks_without_facts": 0,
+  "coverage_pct": 100.0,
+  "facts_total": 7934,
+  "facts_per_type": {
+    "entry_root": 3372,
+    "citation_authority": 2575,
+    "figurative_sense": 1987
+  },
+  "facts_per_region": {
+    "classical": 7934
+  },
+  "apparatus_skipped": 0,
+  "citation_review_queue": 181,
+  "citation_review_file": "docs/citation_review_classical_lexicon.csv",
+  "empty_chunk_ids": []
+}

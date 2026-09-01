@@ -1,0 +1,30 @@
+{
+  "corpus": "saudi_dialect",
+  "input": "data/processed/chunks.jsonl",
+  "output": "data/processed/facts_saudi_dialect.jsonl",
+  "chunks_in": 337,
+  "chunks_with_facts": 337,
+  "chunks_without_facts": 0,
+  "coverage_pct": 100.0,
+  "facts_total": 9534,
+  "facts_per_type": {
+    "entry_headword": 7356,
+    "citation_authority": 1056,
+    "cross_dialect_reference": 667,
+    "page_reference": 288,
+    "gregorian_year": 96,
+    "year_unmarked_era": 38,
+    "hijri_year": 33
+  },
+  "facts_per_region": {
+    "southern": 3139,
+    "najdi": 3132,
+    "northern": 1604,
+    "eastern": 1032,
+    "western": 627
+  },
+  "apparatus_skipped": 1316,
+  "citation_review_queue": 294,
+  "citation_review_file": "docs/citation_review_saudi_dialect.csv",
+  "empty_chunk_ids": []
+}
