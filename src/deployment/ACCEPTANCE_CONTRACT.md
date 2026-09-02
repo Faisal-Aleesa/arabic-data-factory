@@ -51,12 +51,61 @@ and drawing the obvious conclusion. So the requirement is enforced by the signat
 | `INVALID_RECORD` | REJECT — the record is unusable |
 | `FAIL_CONTRADICTED` | REJECT — a precise fact conflicts with the source |
 | `format_validated` false | HOLD_FOR_REVIEW — no definite format answer |
-| `format_conforms` false | **REJECT — grounded but malformed** |
+| `format_conforms` false, `dictionary_entry` | **REJECT — grounded but malformed** |
+| `format_conforms` false, any other format | HOLD_FOR_REVIEW — see tiers below |
 | `PASS` + conforms | ACCEPT |
 | `REVIEW` / `NO_FACT_COVERAGE` + conforms | HOLD_FOR_REVIEW — needs a human or the judge |
 
-Ten self-test cases in `verify_sft.py` pin this table, including the invariant that a
-`PASS` verdict is never accepted without a definite, conforming format answer.
+The self-test in `verify_sft.py` pins every row of this table, plus three invariants: a
+`PASS` verdict is never accepted without a definite conforming format answer; a bare
+`verify_response()` result (no format fields) is refused rather than decided; and every
+format `check_format` knows sits in exactly one tier.
+
+## Two tiers, because the evidence is not equal
+
+A `format_conforms: false` finding is only as strong as the check behind it, and the
+checks are not equally validated.
+
+| tier | format_types | on mismatch |
+|---|---|---|
+| validated against real corpus content | `dictionary_entry` | **REJECT** |
+| validated on synthetic cases only | `prose`, `narrative_paragraph`, `verse`, `list`, `footnote_block` | HOLD_FOR_REVIEW |
+
+**Measured:** both corpora are 100% `dictionary_entry` (337 + 394 chunks), because both
+sources were ingested with `--format dictionary`. That is the only format whose check has
+ever met real data. The other five are implemented against `chunk.py`'s own assignment
+rules and exercised only by hand-written cases, so a mismatch there is weaker evidence —
+weak enough that discarding a record on it would be discarding it on a check that has
+never been tested against real data of its kind.
+
+The tiers live in `verify_sft.FORMAT_HARD_REJECT` / `FORMAT_REVIEW_ONLY`. **When a corpus
+in one of those formats is ingested and its check is validated against real content, move
+that `format_type` into the hard-reject set** and record why here. A self-test asserts
+every format `check_format` knows sits in exactly one tier, so adding a format without
+deciding its tier fails loudly.
+
+## Assumption the gate depends on: `format_type` describes the RESPONSE
+
+**Project policy (communicated to the Task 2 / reconstruction team):** a record's
+`format_type` states the shape the response is *intended* to have. It is **not** an
+inherited copy of the source chunk's format.
+
+**سياسة المشروع: يصف حقل `format_type` شكل الاستجابة المقصود، لا شكل المقطع المصدر.**
+
+This matters because the whole gate rests on it. If reconstruction copies `format_type`
+from the chunk, then a summarisation instruction over a `dictionary_entry` chunk produces
+flowing prose labelled `dictionary_entry`, every such record mismatches, and the gate
+rejects work that is perfectly good. Mismatches would become expected noise, and the
+correct response would be to weaken the gate — which would then stop catching the real
+defect it exists for.
+
+Because the policy holds, a mismatch means what it says: **the response is not the shape
+it claims to be.** That is a real defect, not noise, and `dictionary_entry` mismatches are
+rejected accordingly.
+
+If reconstruction ever cannot honour this — if `format_type` must for some reason mirror
+the chunk — then this gate's `dictionary_entry` tier has to be revisited *before* that
+change ships, not after. It is the assumption that makes hard rejection defensible.
 
 ## What this does NOT settle
 
@@ -64,11 +113,6 @@ Ten self-test cases in `verify_sft.py` pin this table, including the invariant t
   grounding signal on purpose: a well-grounded response in the wrong shape is a different
   defect from a fluent invention, and merging them makes both harder to read. The gate
   lives at acceptance, which is where a pass/reject actually happens.
-- **`check_format` confidence is uneven.** Both corpora are 100% `dictionary_entry`, so
-  that is the only `format_type` validated against real corpus content. `prose`, `verse`,
-  `list` and `footnote_block` rest on `chunk.py`'s own assignment rules and synthetic
-  cases. A `format_conforms: false` on those is weaker evidence than on a dictionary
-  entry, and the release stage may reasonably route them to review instead of rejecting.
 - **No thresholds are settled.** `SimilarityBands` defaults are provisional, derived from
   12 hand-written probes, and real reconstructed output should decide them. See
   `check_similarity.py`.

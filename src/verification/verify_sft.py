@@ -432,6 +432,24 @@ ACCEPT = 'ACCEPT'
 REJECT = 'REJECT'
 HOLD_FOR_REVIEW = 'HOLD_FOR_REVIEW'
 
+# How much a format_conforms=False finding is worth depends on how well that format_type's
+# check is validated, and the two are not equal.
+#
+# قوة الحكم على مخالفة الشكل تتبع قوة التحقق من ذلك النوع، وهما غير متساويين.
+#
+# MEASURED: both corpora are 100% `dictionary_entry` (337 + 394 chunks), so that is the
+# only format_type whose check has been exercised against real corpus content. A mismatch
+# there is reliable evidence and hard-rejects. The other four are implemented against
+# chunk.py's own assignment rules and exercised only by synthetic cases; a mismatch on
+# those is weaker evidence, so it routes to review rather than discarding a record on a
+# check that has never met real data of its kind.
+#
+# When a corpus in one of those formats is ingested and the check is validated against it,
+# move that format_type into the hard-reject set and say so here.
+FORMAT_HARD_REJECT = frozenset(['dictionary_entry'])
+FORMAT_REVIEW_ONLY = frozenset(['prose', 'narrative_paragraph', 'verse',
+                                'footnote_block', 'list'])
+
 
 def acceptance_decision(result):
     """Accept / reject / hold, from BOTH the grounding verdict and format conformance.
@@ -448,7 +466,10 @@ def acceptance_decision(result):
       INVALID_RECORD          -> REJECT   the record itself is unusable
       FAIL_CONTRADICTED       -> REJECT   a precise fact conflicts with the source
       format_validated False  -> HOLD     no definite format answer; absence != clean
-      format_conforms False   -> REJECT   grounded but malformed - the case this guards
+      format_conforms False   -> REJECT   for dictionary_entry, whose check is validated
+                                          against real corpus content
+                              -> HOLD     for the formats validated only on synthetic
+                                          cases - see FORMAT_HARD_REJECT
       PASS + conforms         -> ACCEPT
       anything else + conforms-> HOLD     REVIEW / NO_FACT_COVERAGE need a human or judge
     """
@@ -468,9 +489,16 @@ def acceptance_decision(result):
                 'format could not be checked (%s) - an unchecked format is not a clean '
                 'one' % result.get('format_status'))
     if result.get('format_conforms') is not True:
-        return (REJECT,
-                'response does not conform to its declared format_type (%s): %s'
-                % (result.get('format_type'), result.get('format_reason')))
+        ftype = result.get('format_type')
+        if ftype in FORMAT_HARD_REJECT:
+            return (REJECT,
+                    'response does not conform to its declared format_type (%s), whose '
+                    'check is validated against real corpus content: %s'
+                    % (ftype, result.get('format_reason')))
+        return (HOLD_FOR_REVIEW,
+                'response does not conform to its declared format_type (%s), but that '
+                'check is validated only on synthetic cases - too weak to discard a '
+                'record on: %s' % (ftype, result.get('format_reason')))
     if verdict == PASS:
         return ACCEPT, 'grounded in the source and correctly formatted'
     return (HOLD_FOR_REVIEW,
@@ -686,9 +714,18 @@ def run_self_test():
 
     acc_cases = [
         (AR(PASS),                                   ACCEPT,          'grounded + formed'),
-        (AR(PASS, conforms=False),                   REJECT,          'THE GUARD: grounded but malformed must not pass'),
+        (AR(PASS, conforms=False),                   REJECT,          'THE GUARD: grounded but malformed must not pass (dictionary_entry)'),
         (AR(REVIEW, conforms=False),                 REJECT,          'malformed rejected regardless of verdict'),
         (AR(NO_FACT_COVERAGE, conforms=False),       REJECT,          'malformed rejected regardless of verdict'),
+        # Formats validated only on synthetic cases hold rather than reject.
+        (AR(PASS, conforms=False, format_type='prose'),          HOLD_FOR_REVIEW, 'prose mismatch is weaker evidence'),
+        (AR(PASS, conforms=False, format_type='verse'),          HOLD_FOR_REVIEW, 'verse mismatch is weaker evidence'),
+        (AR(PASS, conforms=False, format_type='list'),           HOLD_FOR_REVIEW, 'list mismatch is weaker evidence'),
+        (AR(PASS, conforms=False, format_type='footnote_block'), HOLD_FOR_REVIEW, 'footnote mismatch is weaker evidence'),
+        # ... but a conforming response in those formats still accepts normally
+        (AR(PASS, format_type='prose'),              ACCEPT,          'prose that conforms accepts'),
+        # ... and a contradiction still outranks any format consideration
+        (AR(FAIL_CONTRADICTED, conforms=False, format_type='prose'), REJECT, 'facts outrank the format tier'),
         (AR(FAIL_CONTRADICTED),                      REJECT,          'contradiction rejected even when well formed'),
         (AR(FAIL_CONTRADICTED, conforms=False),      REJECT,          'both wrong'),
         (AR(INVALID_RECORD),                         REJECT,          'unusable record'),
@@ -702,6 +739,15 @@ def run_self_test():
             print('  [FAIL] acceptance_decision (%s): got %s expected %s'
                   % (note, got, want))
             ok = False
+    # No format_type may be BOTH hard-reject and review-only, and every format
+    # check_format knows must be in one of the two tiers.
+    if FORMAT_HARD_REJECT & FORMAT_REVIEW_ONLY:
+        print('  [FAIL] a format_type is in both acceptance tiers'); ok = False
+    for ft in cfmt.KNOWN_FORMATS:
+        if ft not in FORMAT_HARD_REJECT and ft not in FORMAT_REVIEW_ONLY:
+            print('  [FAIL] %r is a known format but sits in no acceptance tier' % ft)
+            ok = False
+
     # A PASS verdict must NEVER be accepted without a definite, conforming format answer.
     for validated, conforms in ((False, None), (False, True), (True, False), (True, None)):
         got, _ = acceptance_decision(AR(PASS, validated=validated, conforms=conforms))
