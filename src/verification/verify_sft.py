@@ -342,7 +342,49 @@ VERDICT_RANK = {PASS: 0, NO_FACT_COVERAGE: 1, REVIEW: 2, FAIL_CONTRADICTED: 3,
                 INVALID_RECORD: 4}
 
 
-def rank_key(result):
+def is_grounded(result):
+    """Does this result have any fact grounding to anchor its similarity score?
+
+    This module owns the DEFINITION of grounded, because it is a fact-layer judgement.
+    check_similarity.py owns HOW percentiles are compared and refuses to rank two
+    ungrounded ones - it takes groundedness as a required argument precisely so the
+    question cannot be skipped by any caller.
+
+    هذا الموضع يعرّف معنى "مسند"، لأنه حكم يخص طبقة الوقائع، بينما تتولى وحدة التشابه
+    كيفية المقارنة وترفض المفاضلة بين نصين غير مسندين.
+    """
+    return result.get('verdict') != NO_FACT_COVERAGE
+
+
+def similarity_comparable(a, b):
+    """Is a similarity percentile difference between these two results meaningful?
+
+    No, when NEITHER side has any fact grounding. A percentile is a rank against a
+    baseline of wrong chunks; between two responses that are both NO_FACT_COVERAGE
+    there is nothing anchoring either of them to the source, so the ordering is noise
+    rather than evidence.
+
+    هل الفرق في نسبة التشابه بين النتيجتين ذو دلالة؟ لا، إذا لم يكن لأي منهما إسناد
+    إلى وقائع المصدر: النسبة رتبة مقابل عينة من المقاطع الخاطئة، وبين نصين غير مسندين
+    لا يوجد ما يثبتهما إلى المصدر، فالترتيب ضجيج لا دليل.
+
+    Found in the DPO layer, where two format probes flipped verdict BETWEEN corpora on
+    identical logic - AUTO_CONFIRM on one and FLAG_SUSPICIOUS on the other, and the
+    reverse for the second probe - every flip driven by a similarity ordering between
+    two ungrounded halves. Same rule, opposite outcomes, is what noise looks like. This
+    is the canonical implementation; check_dpo.py delegates here so the rule cannot be
+    fixed in one place and left broken in the other.
+    """
+    return is_grounded(a) or is_grounded(b)
+
+
+def rank_key(result, use_similarity=True):
+    """Ordering key: verdict first, similarity only as a tie-break.
+
+    مفتاح الترتيب: الحكم أولا، ثم التشابه لفض التعادل فقط.
+    """
+    if not use_similarity:
+        return (VERDICT_RANK.get(result.get('verdict'), 9), 0)
     pct = (result.get('similarity') or {}).get('percentile')
     return (VERDICT_RANK.get(result.get('verdict'), 9),
             -(pct if pct is not None else -1))
@@ -357,14 +399,35 @@ def compare_responses(response_a, response_b, source_chunk_id, ctx):
     """
     a = verify_response(response_a, source_chunk_id, ctx)
     b = verify_response(response_b, source_chunk_id, ctx)
-    ka, kb = rank_key(a), rank_key(b)
-    if ka < kb:
-        preferred, why = 'a', 'candidate a has the stronger verdict/similarity'
-    elif kb < ka:
-        preferred, why = 'b', 'candidate b has the stronger verdict/similarity'
+    # لا يُفض التعادل بالتشابه إذا كان الطرفان غير مسندين إلى وقائع المصدر.
+    comparable = similarity_comparable(a, b)
+    ra = VERDICT_RANK.get(a.get('verdict'), 9)
+    rb = VERDICT_RANK.get(b.get('verdict'), 9)
+    if ra < rb:
+        preferred, why = 'a', 'candidate a has the stronger verdict'
+    elif rb < ra:
+        preferred, why = 'b', 'candidate b has the stronger verdict'
     else:
-        preferred, why = None, 'candidates are indistinguishable on both signals'
-    return {'preferred': preferred, 'reason': why, 'a': a, 'b': b}
+        # فض التعادل عبر الواجهة المحروسة، لا بمقارنة النسب مباشرة.
+        # Tie-break through check_similarity's guarded API rather than comparing
+        # percentiles by hand - that is what makes the ungrounded case impossible to
+        # get wrong at this call site.
+        rel = csim.compare_percentiles(
+            (a.get('similarity') or {}).get('percentile'),
+            (b.get('similarity') or {}).get('percentile'),
+            is_grounded(a), is_grounded(b))
+        if rel == csim.A_BETTER:
+            preferred, why = 'a', 'verdicts tie; candidate a leads on similarity'
+        elif rel == csim.B_BETTER:
+            preferred, why = 'b', 'verdicts tie; candidate b leads on similarity'
+        elif rel == csim.INCOMPARABLE_UNGROUNDED:
+            preferred, why = None, ('verdicts tie and neither candidate has fact '
+                                    'grounding, so the similarity ordering carries no '
+                                    'information')
+        else:
+            preferred, why = None, 'candidates are indistinguishable on both signals'
+    return {'preferred': preferred, 'reason': why, 'a': a, 'b': b,
+            'similarity_comparable': comparable}
 
 
 # ------------------------------------------------------------------------- self-test
@@ -485,6 +548,27 @@ def run_self_test():
         if got != want:
             print('  [FAIL] ordering (%s): got %r expected %r' % (note, got, want))
             ok = False
+
+    # Ungrounded-vs-ungrounded similarity must not decide a preference. This mirrors
+    # the FMT-2/FMT-3 probes that flipped verdict between corpora in the DPO layer.
+    ung_hi = R(NO_FACT_COVERAGE, 90)
+    ung_lo = R(NO_FACT_COVERAGE, 15)
+    if similarity_comparable(ung_hi, ung_lo):
+        print('  [FAIL] two ungrounded results should not be similarity-comparable')
+        ok = False
+    for x, y in ((ung_hi, ung_lo), (ung_lo, ung_hi)):
+        ka, kb = rank_key(x, False), rank_key(y, False)
+        if ka != kb:
+            print('  [FAIL] ungrounded pair did not tie once similarity is suppressed')
+            ok = False
+    # ... but a verdict gap still decides, even when one side is ungrounded
+    if not similarity_comparable(R(PASS, 20), ung_hi):
+        print('  [FAIL] one grounded side should make similarity comparable'); ok = False
+    if rank_key(R(PASS, 20)) >= rank_key(ung_hi):
+        print('  [FAIL] verdict gap suppressed by the guard'); ok = False
+    # and similarity still breaks ties between two GROUNDED results
+    if rank_key(R(REVIEW, 90)) >= rank_key(R(REVIEW, 40)):
+        print('  [FAIL] similarity should still break a grounded tie'); ok = False
 
     # SFT schema validation
     bad = verify_sft_record({'response': 'x'}, _StubCtx())

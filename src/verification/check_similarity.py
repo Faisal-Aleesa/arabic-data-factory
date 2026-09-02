@@ -257,6 +257,61 @@ def build_embedder(model_id, allow_fallback=False):
         return HashingEmbedder()
 
 
+# ------------------------------------------------------------ comparing percentiles
+#
+# A percentile is a RANK against a baseline of wrong chunks. That makes it meaningful
+# only when at least one side is anchored to the source: between two responses that are
+# both ungrounded, nothing ties either of them to the chunk and the ordering is noise.
+#
+# النسبة المئوية رتبة مقابل عينة من المقاطع الخاطئة، فلا معنى لها إلا إذا كان أحد
+# الطرفين مسندا إلى المصدر. وبين نصين غير مسندين لا شيء يربط أيا منهما بالمقطع،
+# فالترتيب ضجيج لا دليل.
+#
+# This was a real bug, found twice. Two format probes flipped verdict BETWEEN corpora on
+# identical logic - one AUTO_CONFIRM here and FLAG_SUSPICIOUS there, and the reverse for
+# the other probe - every flip driven by a percentile ordering between two ungrounded
+# halves. It was then found to exist a second time in the SFT comparison path, because
+# the fix had been applied at the caller rather than at the source.
+#
+# So groundedness is a REQUIRED argument of this function, not an optional guard a caller
+# has to remember. A caller that has not decided whether its candidates are grounded
+# cannot call it at all, and comparing `result['percentile']` values by hand is a visible
+# departure from the module's own API rather than the path of least resistance.
+#
+# This module deliberately does NOT define what "grounded" means - that is a fact-layer
+# judgement. verify_sft.is_grounded() supplies it.
+
+PERCENTILE_TIE_MARGIN = 5.0        # points; below this the two are indistinguishable
+
+A_BETTER = 'a_better'
+B_BETTER = 'b_better'
+TIE = 'tie'
+INCOMPARABLE_UNGROUNDED = 'incomparable_ungrounded'
+
+
+def compare_percentiles(a_pct, b_pct, a_grounded, b_grounded,
+                        tie_margin=PERCENTILE_TIE_MARGIN):
+    """Compare two similarity percentiles, refusing when neither side is grounded.
+
+    `a_grounded` and `b_grounded` are REQUIRED positional arguments precisely so that
+    the groundedness question cannot be skipped by a future caller.
+
+    مقارنة نسبتي تشابه، مع الامتناع عن الحكم إذا لم يكن أي من الطرفين مسندا.
+    وسيطا الإسناد إلزاميان تحديدا كي لا يتجاوزهما مستدعٍ لاحق.
+
+    Returns one of: 'a_better', 'b_better', 'tie', 'incomparable_ungrounded'.
+    """
+    if not (a_grounded or b_grounded):
+        return INCOMPARABLE_UNGROUNDED
+    if a_pct is None or b_pct is None:
+        return TIE
+    if a_pct - b_pct > tie_margin:
+        return A_BETTER
+    if b_pct - a_pct > tie_margin:
+        return B_BETTER
+    return TIE
+
+
 # -------------------------------------------------------------------------- scoring
 
 def windows(text, size=WINDOW_CHARS, stride=WINDOW_STRIDE):
@@ -373,6 +428,34 @@ def run_self_test():
     # determinism
     if score(a, long_chunk, emb) != s:
         print('  [FAIL] scoring is not deterministic'); ok = False
+
+    # compare_percentiles: the guard lives here now, so it is tested here
+    cmp_cases = [
+        (90.0, 20.0, True,  True,  A_BETTER),
+        (20.0, 90.0, True,  True,  B_BETTER),
+        (70.0, 68.0, True,  True,  TIE),                 # inside the margin
+        (90.0, 20.0, False, False, INCOMPARABLE_UNGROUNDED),
+        (20.0, 90.0, False, False, INCOMPARABLE_UNGROUNDED),   # symmetric
+        (90.0, 20.0, True,  False, A_BETTER),            # one grounded side is enough
+        (90.0, 20.0, False, True,  A_BETTER),
+        (None, 20.0, True,  True,  TIE),                 # a missing score is not a win
+    ]
+    # NB: deliberately not named a/b - the live layer below reuses those names, and an
+    # earlier version of this loop shadowed them and fed None to the tokenizer.
+    for pa, pb, ag, bg, want in cmp_cases:
+        got = compare_percentiles(pa, pb, ag, bg)
+        if got != want:
+            print('  [FAIL] compare_percentiles(%s, %s, %s, %s) = %s, expected %s'
+                  % (pa, pb, ag, bg, got, want))
+            ok = False
+    # groundedness must be positional and required - omitting it is a TypeError, which
+    # is the whole point of the design
+    try:
+        compare_percentiles(90.0, 20.0)
+    except TypeError:
+        pass
+    else:
+        print('  [FAIL] groundedness args are not required'); ok = False
 
     # live layer
     try:

@@ -172,7 +172,7 @@ VERBOSE_RATIO = 1.4
 TERSE_RATIO = 0.7
 
 # Percentile gap below which two similarity scores are treated as indistinguishable.
-SIMILARITY_TIE_MARGIN = 5.0
+SIMILARITY_TIE_MARGIN = csim.PERCENTILE_TIE_MARGIN   # single source of truth
 
 # Levels:
 #   strong      a dedicated signal fires on the weakness itself
@@ -241,19 +241,12 @@ def length_consistency(rejection_type, signal):
 
 
 def similarity_comparable(chosen_result, rejected_result):
-    """Is a similarity percentile difference between these two meaningful?
+    """Delegates to verify_sft, the canonical implementation.
 
-    No, when NEITHER side has any fact grounding. A percentile is a rank against a
-    baseline of wrong chunks; between two responses that are both NO_FACT_COVERAGE there
-    is nothing anchoring either of them to the source, and the ordering is noise.
-
-    This is not a theoretical worry. Two format probes flipped verdict between the two
-    corpora on identical logic - one AUTO_CONFIRM here and FLAG_SUSPICIOUS there, and
-    the reverse for the other - purely on similarity ordering between two ungrounded
-    halves. Same rule, opposite outcomes, which is what noise looks like.
+    يفوّض إلى verify_sft حيث التعريف الأصلي، حتى لا تُصلح القاعدة في موضع وتُترك
+    معطلة في الآخر.
     """
-    return not (chosen_result.get('verdict') == vs.NO_FACT_COVERAGE
-                and rejected_result.get('verdict') == vs.NO_FACT_COVERAGE)
+    return vs.similarity_comparable(chosen_result, rejected_result)
 
 
 def direction(chosen_result, rejected_result, tie_margin=SIMILARITY_TIE_MARGIN):
@@ -264,19 +257,20 @@ def direction(chosen_result, rejected_result, tie_margin=SIMILARITY_TIE_MARGIN):
         return 'chosen_better_verdict'
     if rr < rc:
         return 'rejected_better_verdict'
-    if not similarity_comparable(chosen_result, rejected_result):
-        # Verdicts tie and similarity carries no information - report the tie rather
-        # than manufacture a direction from noise.
-        return 'tie'
-    pc = (chosen_result.get('similarity') or {}).get('percentile')
-    pr = (rejected_result.get('similarity') or {}).get('percentile')
-    if pc is None or pr is None:
-        return 'tie'
-    if pc - pr > tie_margin:
+    # المقارنة عبر الواجهة المحروسة في وحدة التشابه، التي ترفض الحكم بين نصين غير مسندين.
+    # Compare through check_similarity's guarded API rather than by hand: it takes
+    # groundedness as a required argument and refuses to rank two ungrounded responses,
+    # so this call site cannot reintroduce the bug even if someone edits it later.
+    rel = csim.compare_percentiles(
+        (chosen_result.get('similarity') or {}).get('percentile'),
+        (rejected_result.get('similarity') or {}).get('percentile'),
+        vs.is_grounded(chosen_result), vs.is_grounded(rejected_result),
+        tie_margin)
+    if rel == csim.A_BETTER:
         return 'chosen_better_similarity'
-    if pr - pc > tie_margin:
+    if rel == csim.B_BETTER:
         return 'rejected_better_similarity'
-    return 'tie'
+    return 'tie'          # covers TIE and INCOMPARABLE_UNGROUNDED alike
 
 
 def corroborates(rejection_type, chosen_result, rejected_result, length_sig,
@@ -713,7 +707,9 @@ def main():
             counts[r['verdict']] = counts.get(r['verdict'], 0) + 1
         print('%d pair(s): %s' % (len(results),
                                   '  '.join('%s=%d' % kv for kv in sorted(counts.items()))))
-        print('NOTE: format_type is NOT validated - no format checker exists yet.')
+        print('NOTE: format conformance IS checked (check_format.py). Only '
+              'dictionary_entry is validated against real corpus data - both corpora '
+              'are 100% that type; other format_types rest on synthetic cases.')
 
 
 if __name__ == '__main__':
