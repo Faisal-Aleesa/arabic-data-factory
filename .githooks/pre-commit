@@ -38,6 +38,26 @@ else
     exit 0
 fi
 
+# Static symbol check first - it is instant and catches a failure class the audit and the
+# self-tests both miss: an anchored edit that silently did not apply (a stray CRLF or a
+# shifted blank line leaves the file untouched with no error). A self-test cannot exercise
+# a function that was never written, so "tests pass" is not evidence the edit landed.
+SYMBOLS="$ROOT/tools/check_symbols.py"
+if [ -f "$SYMBOLS" ] && [ -d "$ROOT/src/verification" ]; then
+    PYTHONIOENCODING=utf-8 "$PY" "$SYMBOLS" --cross-module "$ROOT/src/verification" >/dev/null 2>&1
+    if [ $? -ne 0 ]; then
+        echo "" >&2
+        echo "==================================================================" >&2
+        echo " COMMIT BLOCKED - a cross-module symbol reference does not resolve." >&2
+        echo "" >&2
+        echo " Usually this means an anchored edit silently failed to apply." >&2
+        echo " Details:" >&2
+        PYTHONIOENCODING=utf-8 "$PY" "$SYMBOLS" --cross-module "$ROOT/src/verification" >&2
+        echo "==================================================================" >&2
+        exit 1
+    fi
+fi
+
 # The audit prints Arabic; force UTF-8 so the report is readable on Windows consoles.
 PYTHONIOENCODING=utf-8 "$PY" "$AUDIT"
 STATUS=$?

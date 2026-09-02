@@ -71,10 +71,18 @@ matters because the baseline embedding is the expensive part.
 
 What this CANNOT do yet
 -----------------------
-- NO FORMAT VALIDATION. `format_type` is carried through and checked for presence only.
-  Whether the response actually conforms to its declared format is a separate task that
-  has not been built. A malformed response with good facts and good similarity will pass
-  here.
+- FORMAT is checked, but does NOT affect the verdict. check_format.py tests structural
+  conformance and the result is reported as `format_status` / `format_conforms` /
+  `format_validated`. It is deliberately NOT folded into the PASS/REVIEW/FAIL decision:
+  the verdict answers "is this grounded in the source", and a well-grounded response in
+  the wrong shape is a different defect from a fluent invention. A caller that wants
+  format to gate acceptance should read the field and decide - check_dpo.py does exactly
+  that for its `wrong_formatting` pairs.
+  `format_validated` is True only when a check actually ran and returned a definite
+  answer; an unrecognised format_type or an empty response leaves it False, because the
+  absence of a check must never read as a clean result.
+  MEASURED: both corpora are 100% `dictionary_entry`, so that is the only format value
+  validated against real corpus content; the rest rest on synthetic cases.
 - It inherits every limitation of the tools it wraps:
   * extraction recall - a fact extract_facts.py missed is not in the table, so a response
     asserting it reads as UNSUPPORTED. UNSUPPORTED counts must be read against
@@ -101,6 +109,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import check_facts as cf                                        # noqa: E402
 import check_similarity as csim                                 # noqa: E402
+import check_format as cfmt                                     # noqa: E402
 
 CHUNKS = csim.CHUNKS
 FACTS = cf.FACTS
@@ -322,7 +331,16 @@ def verify_sft_record(record, ctx):
     out = verify_response(record['response'], record['source_chunk_id'], ctx)
     out['model_version'] = record.get('model_version')
     out['format_type'] = record.get('format_type')
-    out['format_validated'] = False        # explicit: no format check exists yet
+    # فحص مطابقة الشكل عبر check_format، مع تسجيل السبب لا النتيجة وحدها.
+    # Real format conformance, not a hardcoded false. `format_validated` is True only
+    # when a check actually ran and returned a definite answer - an unrecognised
+    # format_type or an empty response leaves it False, because absence of a check must
+    # never read as a clean result.
+    fmt = cfmt.check_format(record['response'], record.get('format_type'))
+    out['format_status'] = fmt['status']
+    out['format_reason'] = fmt.get('reason')
+    out['format_validated'] = fmt['status'] in (cfmt.MATCH, cfmt.MISMATCH)
+    out['format_conforms'] = (fmt['status'] == cfmt.MATCH) if out['format_validated']         else None
 
     # Cheap record-level consistency check: the record's declared region must match the
     # chunk it cites. A mismatch is a record construction error, not a model error, and
@@ -570,6 +588,24 @@ def run_self_test():
     if rank_key(R(REVIEW, 90)) >= rank_key(R(REVIEW, 40)):
         print('  [FAIL] similarity should still break a grounded tie'); ok = False
 
+    # format reporting: a definite answer sets format_validated, an indefinite one
+    # must not - absence of a check may never read as a clean result
+    fmt_cases = [
+        ('الكلمة (خب) وهي أرض مستوية.', 'dictionary_entry', True,  True),
+        ('خب أرض مستوية بلا بنية',       'dictionary_entry', True,  False),
+        ('نص ما',                        'table',            False, None),
+        ('',                             'dictionary_entry', False, None),
+    ]
+    for resp, ftype, want_validated, want_conforms in fmt_cases:
+        f = cfmt.check_format(resp, ftype)
+        validated = f['status'] in (cfmt.MATCH, cfmt.MISMATCH)
+        conforms = (f['status'] == cfmt.MATCH) if validated else None
+        if validated != want_validated or conforms != want_conforms:
+            print('  [FAIL] format fields for %r/%r -> validated=%s conforms=%s, '
+                  'expected %s/%s' % (resp[:20], ftype, validated, conforms,
+                                      want_validated, want_conforms))
+            ok = False
+
     # SFT schema validation
     bad = verify_sft_record({'response': 'x'}, _StubCtx())
     if bad['verdict'] != INVALID_RECORD or 'instruction' not in bad['reason']:
@@ -659,6 +695,9 @@ def main():
         print('  facts      : %s' % r.get('fact_verdict'))
         print('  similarity : %s  band=%s' % (_fmt_sim(r.get('similarity')),
                                               r.get('similarity_band')))
+        print('  format     : %s%s' % (
+            r.get('format_status', 'n/a'),
+            '' if r.get('format_validated') else '  (not validated - verdict unaffected)'))
         print('  reason     : %s' % r['reason'])
         for w in r.get('record_warnings', []):
             print('  WARNING    : %s' % w)
@@ -673,8 +712,8 @@ def main():
             counts[r['verdict']] = counts.get(r['verdict'], 0) + 1
         print('%d record(s): %s' % (len(results), '  '.join(
             '%s=%d' % kv for kv in sorted(counts.items()))))
-        print('NOTE: format_type is carried through but NOT validated - no format '
-              'checker exists yet.')
+        print('NOTE: format conformance IS checked and reported per record, but does '
+              'NOT affect the verdict - read format_conforms to gate on it.')
 
 
 if __name__ == '__main__':
