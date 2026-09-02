@@ -312,6 +312,38 @@ def compare_percentiles(a_pct, b_pct, a_grounded, b_grounded,
     return TIE
 
 
+# ------------------------------------------------- direct similarity between two texts
+#
+# التشابه المباشر بين نصين، لا بين نص ومقطع مصدر.
+#
+# The rest of this module compares a response against its SOURCE CHUNK, which is an
+# asymmetric retrieval question. This is the other one: how alike are two texts to each
+# other? DPO needs it to confirm `chosen` and `rejected` are not near-duplicates.
+#
+# Lexical first, for the same reason the rest of the pipeline prefers deterministic
+# measures: difflib's token-sequence ratio needs no model, does not move with the
+# encoder, and is exactly the right instrument for detecting a trivial word swap. The
+# embedding cosine is optional and informational - see check_dpo for why it is NOT used
+# to judge degeneracy in this project.
+
+def pair_similarity(a, b, embedder=None):
+    """Lexical (and optionally embedding) similarity between two texts.
+
+    Returns {'lexical': float, 'cosine': float|None}. `lexical` is difflib's token
+    sequence ratio: 1.0 for identical token sequences, falling proportionally with each
+    edit.
+    """
+    import difflib
+    out = {'lexical': difflib.SequenceMatcher(None, (a or '').split(),
+                                              (b or '').split()).ratio(),
+           'cosine': None}
+    if embedder is not None and (a or '').strip() and (b or '').strip():
+        enc = getattr(embedder, 'encode_query', None) or embedder.encode
+        v = enc([a, b])
+        out['cosine'] = float(v[0] @ v[1])
+    return out
+
+
 # -------------------------------------------------------------------------- scoring
 
 def windows(text, size=WINDOW_CHARS, stride=WINDOW_STRIDE):

@@ -186,6 +186,57 @@ SIMILARITY_TIE_MARGIN = csim.PERCENTILE_TIE_MARGIN   # single source of truth
 # after the first run: poor_instruction_following produced a verdict gap on both corpora
 # (an off-topic answer drifts from the chunk), and wrong_formatting did on one corpus
 # where destroying the structure also destroyed the content signal.
+# ---------------------------------------------- chosen/rejected distinctness floor
+#
+# أرضية التمايز: يجب ألا يكون المرفوض نسخة شبه طبق الأصل من المختار.
+#
+# A DPO pair whose two halves are near-identical carries no contrastive signal - there is
+# nothing for the model to learn a preference from. But the floor CANNOT be a single
+# number, and the measurement says why.
+#
+# MEASURED, chosen-vs-rejected difflib token ratio across the 22 synthetic pairs:
+#
+#   1.000        the two BROKEN "halves identical" pairs        <- genuinely degenerate
+#   0.974/0.967  LEGITIMATE partial_factual_errors (one digit)  <- minimal edit by design
+#   0.884/0.857  LEGITIMATE unsupported_additions               <- minimal addition
+#   0.685 ->     verbosity, missing_information, wrong_formatting, wrong_register,
+#   0.033        weak_organization, less_faithful_reconstruction, poor_instruction_following
+#
+# A flat floor at 0.95 would flag the legitimate minimal-edit pairs, which are arguably
+# the MOST valuable kind: they isolate one defect and hold everything else constant. So
+# the floor is rejection_type aware. For the two minimal-edit types only an essentially
+# exact duplicate counts as degenerate; for every other type, text that similar means the
+# declared weakness was never actually introduced.
+#
+# Note what is NOT used: embedding cosine. `wrong_register` pairs say the SAME thing in a
+# different register, so they are semantically near-identical BY DESIGN - a semantic floor
+# would flag exactly the pairs whose contrast is register. Cosine is reported for
+# information and never judged on.
+MINIMAL_EDIT_TYPES = frozenset(['partial_factual_errors', 'unsupported_additions'])
+DEGENERATE_IDENTICAL = 0.995   # any type: essentially the same text
+DEGENERATE_FLOOR = 0.90        # non-minimal-edit types; highest observed legit is 0.685
+
+
+def pair_distinctness(chosen, rejected, rejection_type, embedder=None):
+    """Are the two halves distinct enough to carry a training signal?"""
+    sim = csim.pair_similarity(chosen, rejected, embedder)
+    lex = sim['lexical']
+    floor = (DEGENERATE_IDENTICAL if rejection_type in MINIMAL_EDIT_TYPES
+             else DEGENERATE_FLOOR)
+    degenerate = lex >= floor
+    if degenerate and lex >= DEGENERATE_IDENTICAL:
+        why = ('the two halves are essentially the same text (lexical %.3f) - no '
+               'contrastive signal at all' % lex)
+    elif degenerate:
+        why = ('lexical similarity %.3f >= %.2f for %r, which should produce '
+               'substantively different text - the declared weakness may never have '
+               'been introduced' % (lex, floor, rejection_type))
+    else:
+        why = 'halves are distinct enough (lexical %.3f < %.2f)' % (lex, floor)
+    return {'lexical': lex, 'cosine': sim['cosine'], 'floor': floor,
+            'degenerate': degenerate, 'reason': why}
+
+
 DETECTABILITY = {
     'partial_factual_errors': 'strong',
     'less_faithful_reconstruction': 'strong',
@@ -321,7 +372,7 @@ def corroborates(rejection_type, chosen_result, rejected_result, length_sig,
 
 
 def combine_dpo(direction_value, corroborated, length_consistent, format_status,
-                declared_detectability, axis_win=False):
+                declared_detectability, axis_win=False, degenerate=False):
     """Pure decision function. No IO, no model - the whole rule in one place.
 
     `axis_win` means a DEDICATED, DETERMINISTIC check shows chosen strictly better on
@@ -335,6 +386,10 @@ def combine_dpo(direction_value, corroborated, length_consistent, format_status,
     fact with no threshold to tune; the length signal is a ratio against a hand-picked
     bound, and a padded answer is not wrong in the way a malformed one is.
     """
+    if degenerate:
+        return (FLAG_SUSPICIOUS,
+                'DEGENERATE PAIR: chosen and rejected are near-duplicates, so there is '
+                'no contrastive signal to train on regardless of which is better')
     if direction_value in ('rejected_better_verdict', 'rejected_better_similarity'):
         return (FLAG_SUSPICIOUS,
                 'rejected scores better than chosen (%s) - the pair is mislabeled or the '
@@ -429,8 +484,10 @@ def check_pair(record, ctx):
         record['chosen'], record['rejected'], record.get('format_type'))
     corr = corroborates(rtype, chosen, rejected, lsig, fmt_relation)
     detect = DETECTABILITY.get(rtype, 'none')
+    dist = pair_distinctness(record['chosen'], record['rejected'], rtype, ctx.embedder)
     axis_win = (rtype == 'wrong_formatting' and fmt_relation == 'chosen_better')
-    verdict, reason = combine_dpo(d, corr, lcons, fmt_relation, detect, axis_win)
+    verdict, reason = combine_dpo(d, corr, lcons, fmt_relation, detect, axis_win,
+                                  dist['degenerate'])
 
     chunk = ctx.chunks.get(cid)
     if chunk is not None and record.get('source_region') != chunk.get('region'):
@@ -446,6 +503,7 @@ def check_pair(record, ctx):
         'rejected_facts': rejected.get('fact_verdict'),
         'chosen_pct': (chosen.get('similarity') or {}).get('percentile'),
         'rejected_pct': (rejected.get('similarity') or {}).get('percentile'),
+        'distinctness': dist,
         'length': lens, 'length_signal': lsig,
         'length_consistency': lcons, 'length_note': lnote,
         'format_check': {'chosen': fmt_c_detail['status'],
@@ -545,6 +603,46 @@ def run_self_test():
         if v == AUTO_CONFIRM:
             print('  [FAIL] undetectable rejection_type reached AUTO_CONFIRM')
             ok = False
+
+    # distinctness floor: degeneracy outranks every other consideration
+    deg_cases = [
+        # (chosen, rejected, rejection_type, expected degenerate)
+        ('نص واحد مكرر تماما بلا اي تغيير', 'نص واحد مكرر تماما بلا اي تغيير',
+         'partial_factual_errors', True),        # identical -> degenerate for ANY type
+        ('نص واحد مكرر تماما بلا اي تغيير', 'نص واحد مكرر تماما بلا اي تغيير',
+         'wrong_register', True),
+        # a minimal edit is LEGITIMATE for partial_factual_errors ...
+        ('طبع المرجع سنة 1426 وفيه شرح مطول للمادة المعجمية المذكورة',
+         'طبع المرجع سنة 1436 وفيه شرح مطول للمادة المعجمية المذكورة',
+         'partial_factual_errors', False),
+        # ... but the SAME pair under a type that should rewrite the text is degenerate
+        ('طبع المرجع سنة 1426 وفيه شرح مطول للمادة المعجمية المذكورة',
+         'طبع المرجع سنة 1436 وفيه شرح مطول للمادة المعجمية المذكورة',
+         'wrong_register', True),
+        # genuinely distinct halves pass under either
+        ('اشرح معنى هذه المادة وبيّن أصل اللفظة',
+         'تتناول هذه الفقرة موضوعا مختلفا تماما لا صلة له بما سبق إطلاقا',
+         'wrong_register', False),
+        ('اشرح معنى هذه المادة وبيّن أصل اللفظة',
+         'تتناول هذه الفقرة موضوعا مختلفا تماما لا صلة له بما سبق إطلاقا',
+         'partial_factual_errors', False),
+    ]
+    for ch, rj, rt, want in deg_cases:
+        got = pair_distinctness(ch, rj, rt)['degenerate']
+        if got != want:
+            print('  [FAIL] distinctness(%r) -> degenerate=%s, expected %s (lex %.3f)'
+                  % (rt, got, want, pair_distinctness(ch, rj, rt)['lexical']))
+            ok = False
+    # an identical pair must be degenerate under EVERY charter type
+    for rt in REJECTION_TYPES:
+        if not pair_distinctness('نص مطابق تماما', 'نص مطابق تماما', rt)['degenerate']:
+            print('  [FAIL] identical halves not degenerate for %r' % rt); ok = False
+    # degeneracy outranks every other signal, including a clean verdict gap
+    v, why = combine_dpo('chosen_better_verdict', True, 'consistent', 'chosen_better',
+                         'strong', True, degenerate=True)
+    if v != FLAG_SUSPICIOUS or 'DEGENERATE' not in why:
+        print('  [FAIL] a degenerate pair with a verdict gap was not flagged: %s' % v)
+        ok = False
 
     # similarity between two ungrounded responses is noise, not a direction
     ung_a = {'verdict': vs.NO_FACT_COVERAGE, 'similarity': {'percentile': 20.0}}
@@ -690,6 +788,9 @@ def main():
         print('  rejected: %-18s facts=%-18s pct=%s'
               % (r['rejected_verdict'], r['rejected_facts'],
                  '%.1f' % r['rejected_pct'] if r['rejected_pct'] is not None else 'n/a'))
+        print('  distinctness: lexical=%.3f floor=%.2f%s'
+              % (r['distinctness']['lexical'], r['distinctness']['floor'],
+                 '  DEGENERATE' if r['distinctness']['degenerate'] else ''))
         print('  direction=%s  corroborated=%s  length=%s (%s)'
               % (r['direction'], r['corroborated'], r['length_signal'],
                  r['length_consistency']))
