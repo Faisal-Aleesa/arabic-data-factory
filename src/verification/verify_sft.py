@@ -71,7 +71,12 @@ matters because the baseline embedding is the expensive part.
 
 What this CANNOT do yet
 -----------------------
-- FORMAT is checked, but does NOT affect the verdict. check_format.py tests structural
+- FORMAT is checked, but does NOT affect the verdict. THE GATE LIVES AT ACCEPTANCE:
+  acceptance_decision() below consults format and the verdict together, and is the only
+  supported way to turn a result into an accept/reject for the released dataset. Anything
+  reading `verdict` alone can let a grounded-but-malformed record through. See
+  src/deployment/ACCEPTANCE_CONTRACT.md, which is written for whoever builds that stage.
+  On the verdict itself: check_format.py tests structural
   conformance and the result is reported as `format_status` / `format_conforms` /
   `format_validated`. It is deliberately NOT folded into the PASS/REVIEW/FAIL decision:
   the verdict answers "is this grounded in the source", and a well-grounded response in
@@ -408,6 +413,71 @@ def rank_key(result, use_similarity=True):
             -(pct if pct is not None else -1))
 
 
+# ------------------------------------------------------------- acceptance decision
+#
+# قرار القبول: يوجب النظر في الإسناد والشكل معا، لا في الحكم وحده.
+#
+# THE ONLY SANCTIONED WAY to turn a verification result into accept/reject for the
+# released dataset. Whatever builds the release stage must call this rather than reading
+# `verdict` on its own.
+#
+# The verdict answers ONE question: is this response grounded in its source? It says
+# nothing about whether the response is shaped the way its format_type promises. A
+# grounded-but-malformed record has a PASS verdict, and accepting on the verdict alone
+# would let it through silently. That is the failure this function exists to prevent, so
+# format is not an optional extra input here - it is required, and its ABSENCE is a
+# refusal rather than a pass.
+
+ACCEPT = 'ACCEPT'
+REJECT = 'REJECT'
+HOLD_FOR_REVIEW = 'HOLD_FOR_REVIEW'
+
+
+def acceptance_decision(result):
+    """Accept / reject / hold, from BOTH the grounding verdict and format conformance.
+
+    `result` must come from verify_sft_record(), not verify_response(): the per-response
+    function does not run a format check, and a result without format fields cannot be
+    decided. Passing one raises ValueError rather than defaulting to anything - a missing
+    check must never resolve to acceptance.
+
+    يجب أن تأتي النتيجة من verify_sft_record لا من verify_response، لأن الأخيرة لا تفحص
+    الشكل، وغياب الفحص لا يجوز أن يؤول إلى قبول.
+
+    Rules, strictest first:
+      INVALID_RECORD          -> REJECT   the record itself is unusable
+      FAIL_CONTRADICTED       -> REJECT   a precise fact conflicts with the source
+      format_validated False  -> HOLD     no definite format answer; absence != clean
+      format_conforms False   -> REJECT   grounded but malformed - the case this guards
+      PASS + conforms         -> ACCEPT
+      anything else + conforms-> HOLD     REVIEW / NO_FACT_COVERAGE need a human or judge
+    """
+    if 'format_validated' not in result:
+        raise ValueError(
+            'acceptance_decision() needs a verify_sft_record() result carrying format '
+            'fields; a bare verify_response() verdict cannot be accepted because format '
+            'was never checked')
+
+    verdict = result.get('verdict')
+    if verdict == INVALID_RECORD:
+        return REJECT, 'the record is invalid: %s' % result.get('reason')
+    if verdict == FAIL_CONTRADICTED:
+        return REJECT, 'a precise fact conflicts with the source'
+    if not result.get('format_validated'):
+        return (HOLD_FOR_REVIEW,
+                'format could not be checked (%s) - an unchecked format is not a clean '
+                'one' % result.get('format_status'))
+    if result.get('format_conforms') is not True:
+        return (REJECT,
+                'response does not conform to its declared format_type (%s): %s'
+                % (result.get('format_type'), result.get('format_reason')))
+    if verdict == PASS:
+        return ACCEPT, 'grounded in the source and correctly formatted'
+    return (HOLD_FOR_REVIEW,
+            'format is correct but grounding is %s - needs a human or the judge'
+            % verdict)
+
+
 def compare_responses(response_a, response_b, source_chunk_id, ctx):
     """DPO helper: score two candidates for the same chunk and rank them.
 
@@ -605,6 +675,47 @@ def run_self_test():
                   'expected %s/%s' % (resp[:20], ftype, validated, conforms,
                                       want_validated, want_conforms))
             ok = False
+
+    # acceptance_decision: the format gate that stops a grounded-but-malformed record
+    def AR(verdict, validated=True, conforms=True, **kw):
+        d = {'verdict': verdict, 'format_validated': validated,
+             'format_conforms': conforms, 'format_type': 'dictionary_entry',
+             'format_status': 'match' if conforms else 'mismatch', 'reason': 'x'}
+        d.update(kw)
+        return d
+
+    acc_cases = [
+        (AR(PASS),                                   ACCEPT,          'grounded + formed'),
+        (AR(PASS, conforms=False),                   REJECT,          'THE GUARD: grounded but malformed must not pass'),
+        (AR(REVIEW, conforms=False),                 REJECT,          'malformed rejected regardless of verdict'),
+        (AR(NO_FACT_COVERAGE, conforms=False),       REJECT,          'malformed rejected regardless of verdict'),
+        (AR(FAIL_CONTRADICTED),                      REJECT,          'contradiction rejected even when well formed'),
+        (AR(FAIL_CONTRADICTED, conforms=False),      REJECT,          'both wrong'),
+        (AR(INVALID_RECORD),                         REJECT,          'unusable record'),
+        (AR(REVIEW),                                 HOLD_FOR_REVIEW, 'formed but grounding uncertain'),
+        (AR(NO_FACT_COVERAGE),                       HOLD_FOR_REVIEW, 'formed but no fact coverage'),
+        (AR(PASS, validated=False, conforms=None),   HOLD_FOR_REVIEW, 'unchecked format is not a clean one'),
+    ]
+    for res, want, note in acc_cases:
+        got, _ = acceptance_decision(res)
+        if got != want:
+            print('  [FAIL] acceptance_decision (%s): got %s expected %s'
+                  % (note, got, want))
+            ok = False
+    # A PASS verdict must NEVER be accepted without a definite, conforming format answer.
+    for validated, conforms in ((False, None), (False, True), (True, False), (True, None)):
+        got, _ = acceptance_decision(AR(PASS, validated=validated, conforms=conforms))
+        if got == ACCEPT:
+            print('  [FAIL] PASS accepted with format validated=%s conforms=%s'
+                  % (validated, conforms))
+            ok = False
+    # A bare verify_response() result carries no format fields and must be refused.
+    try:
+        acceptance_decision({'verdict': PASS})
+    except ValueError:
+        pass
+    else:
+        print('  [FAIL] a result without format fields was decided anyway'); ok = False
 
     # SFT schema validation
     bad = verify_sft_record({'response': 'x'}, _StubCtx())
