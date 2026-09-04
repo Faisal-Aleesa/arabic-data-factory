@@ -260,5 +260,12 @@ tests/fixtures/*saudi_dialect*
 # and a local-only commit could be swept into a future push by accident. Keeping them
 # out of git entirely is the stronger guarantee. They persist on disk; they never enter
 # history. Pattern covers any future handoff file, not just the current one.
-docs/*HANDOFF*.md
-docs/*handoff*.md
+#
+# Case-folded by hand. This previously read as two patterns, *HANDOFF* and *handoff*,
+# which covered the all-caps and all-lower spellings but not a mixed-case one such as
+# Session_Handoff.md. On Windows core.ignorecase hides that; on a case-sensitive clone
+# it does not, so a teammate's mixed-case handoff would have shown up as a normal
+# untracked file. The pre-commit audit would not catch it either: a handoff is prose
+# ABOUT the corpus, not verbatim source text, so it passes an audit built to find
+# quoted Arabic. One bracket pattern covers every spelling.
+docs/*[Hh][Aa][Nn][Dd][Oo][Ff][Ff]*.md
