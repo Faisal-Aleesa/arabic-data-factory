@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>لوحة مراجعة حَكَم DPO — المعجم الكلاسيكي</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Cairo:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#EFE6D3;
+    --paper-deep:#E5D9BE;
+    --ink:#2B241C;
+    --ink-soft:#5B5142;
+    --line:#C9B98F;
+    --fail:#8C2F1B;
+    --fail-bg:#F3E1D8;
+    --pass:#3F5D42;
+    --pass-bg:#E3EBDD;
+    --review:#8A6A1E;
+    --review-bg:#F1E6C8;
+    --flag:#5C3A78;
+    --flag-bg:#EADFF2;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    background:var(--paper);
+    background-image:
+      radial-gradient(circle at 15% 8%, rgba(255,255,255,.25), transparent 40%),
+      radial-gradient(circle at 85% 92%, rgba(0,0,0,.05), transparent 45%);
+    color:var(--ink);
+    font-family:'Cairo',sans-serif;
+    min-height:100vh;
+  }
+  header{
+    padding:28px 32px 18px;
+    border-bottom:2px solid var(--line);
+  }
+  header h1{
+    font-family:'Amiri',serif;
+    font-weight:700;
+    font-size:28px;
+    margin:0 0 4px;
+    letter-spacing:.5px;
+  }
+  header p.sub{
+    margin:0;
+    color:var(--ink-soft);
+    font-size:14px;
+  }
+  .stats{
+    display:flex;
+    gap:10px;
+    margin-top:16px;
+    flex-wrap:wrap;
+  }
+  .stat{
+    border:1px solid var(--line);
+    border-radius:3px;
+    padding:8px 14px;
+    background:rgba(255,255,255,.35);
+    font-size:13px;
+    min-width:88px;
+  }
+  .stat b{display:block;font-size:20px;font-family:'Amiri',serif}
+  .toolbar{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    align-items:center;
+    padding:16px 32px;
+    border-bottom:1px solid var(--line);
+    background:rgba(255,255,255,.2);
+  }
+  .toolbar input[type=search]{
+    flex:1;
+    min-width:200px;
+    padding:8px 12px;
+    border:1px solid var(--line);
+    border-radius:3px;
+    background:var(--paper-deep);
+    font-family:'Cairo',sans-serif;
+    color:var(--ink);
+  }
+  select{
+    padding:8px 10px;
+    border:1px solid var(--line);
+    border-radius:3px;
+    background:var(--paper-deep);
+    font-family:'Cairo',sans-serif;
+    color:var(--ink);
+  }
+  .pill{
+    padding:5px 12px;
+    border:1px solid var(--line);
+    border-radius:14px;
+    font-size:12px;
+    cursor:pointer;
+    background:transparent;
+    color:var(--ink-soft);
+    user-select:none;
+  }
+  .pill.active{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+  main{padding:22px 32px 60px; display:grid; gap:16px; max-width:980px; margin:0 auto;}
+  .card{
+    position:relative;
+    background:linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,.25));
+    border:1px solid var(--line);
+    border-radius:2px;
+    padding:18px 22px 16px 84px;
+    box-shadow:0 1px 0 rgba(0,0,0,.05);
+  }
+  .stamp{
+    position:absolute;
+    left:14px; top:18px;
+    width:60px;
+    text-align:center;
+    font-family:'Amiri',serif;
+    font-weight:700;
+    font-size:12px;
+    padding:5px 2px;
+    border:2px solid;
+    border-radius:4px;
+    transform:rotate(-6deg);
+    letter-spacing:.5px;
+  }
+  .stamp.FAIL{color:var(--fail);border-color:var(--fail)}
+  .stamp.PASS{color:var(--pass);border-color:var(--pass)}
+  .stamp.NEEDS_REVIEW{color:var(--review);border-color:var(--review)}
+  .stamp.FLAG{color:var(--flag);border-color:var(--flag)}
+  .card-top{
+    display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap;
+  }
+  .rej-type{
+    font-family:'Amiri',serif;
+    font-weight:700;
+    font-size:16px;
+  }
+  .meta{font-size:12px;color:var(--ink-soft)}
+  .conf-bar{
+    height:5px; background:var(--paper-deep); border-radius:3px; margin:8px 0 12px; overflow:hidden;
+    border:1px solid var(--line);
+  }
+  .conf-fill{height:100%; background:var(--ink-soft)}
+  .texts{display:grid; grid-template-columns:1fr; gap:8px; font-family:'Amiri',serif; font-size:16px; line-height:1.9}
+  .text-block{padding:10px 12px; border-radius:2px; border:1px solid var(--line)}
+  .text-block.chosen{background:var(--pass-bg)}
+  .text-block.rejected{background:var(--fail-bg)}
+  .text-block .lbl{font-family:'Cairo',sans-serif; font-size:11px; color:var(--ink-soft); margin-bottom:4px; font-weight:600}
+  details{margin-top:10px}
+  summary{cursor:pointer; font-size:13px; color:var(--ink-soft); user-select:none}
+  .reasons{margin:8px 0 0; padding-inline-start:18px; font-size:13.5px; line-height:1.8}
+  .evidence-json{
+    background:var(--ink); color:var(--paper); padding:10px 12px; border-radius:3px;
+    font-size:11.5px; direction:ltr; text-align:left; overflow-x:auto; white-space:pre-wrap;
+    font-family:'SFMono-Regular',Consolas,monospace;
+  }
+  .review-row{
+    display:flex; gap:8px; align-items:center; margin-top:12px; padding-top:10px;
+    border-top:1px dashed var(--line); flex-wrap:wrap;
+  }
+  .review-row button{
+    font-family:'Cairo',sans-serif; font-size:12px; padding:6px 12px; border-radius:3px;
+    border:1px solid var(--line); background:var(--paper-deep); cursor:pointer; color:var(--ink);
+  }
+  .review-row button.agree.active{background:var(--pass); color:#fff; border-color:var(--pass)}
+  .review-row button.disagree.active{background:var(--fail); color:#fff; border-color:var(--fail)}
+  .review-row .note{font-size:12px; color:var(--ink-soft)}
+  .empty{padding:60px; text-align:center; color:var(--ink-soft); font-family:'Amiri',serif; font-size:18px}
+</style>
+</head>
+<body>
+<header>
+  <h1>لوحة مراجعة حَكَم DPO — المعجم الكلاسيكي</h1>
+  <p class="sub">مراجعة بشرية لأحكام الطبقة القاعدية/الدلالية على أزواج التفضيل. كل بطاقة = حالة واحدة (chosen/rejected) مع سبب الرفض والثقة والأدلة.</p>
+  <div class="stats" id="stats"></div>
+</header>
+
+<div class="toolbar">
+  <input type="search" id="search" placeholder="ابحث في النص أو معرّف المصدر…">
+  <select id="verdictFilter">
+    <option value="">كل الأحكام</option>
+    <option value="FAIL">FAIL</option>
+    <option value="NEEDS_REVIEW">NEEDS_REVIEW</option>
+    <option value="PASS">PASS</option>
+    <option value="FLAG">أعلام جودة البيانات</option>
+  </select>
+  <select id="typeFilter"><option value="">كل أسباب الرفض</option></select>
+  <button class="pill" id="lowConfBtn">ثقة منخفضة فقط (&lt; 0.6)</button>
+</div>
+
+<main id="cards"></main>
+
+<script>
+const DATA = [{"id": 0, "source_chunk_id": "asas_albalagha_c0001", "prompt": "اشرح مضمون هذه المادة المعجمية.", "chosen": "تعرض هذه المادة معاني الجذر (أتى)، فمنها أتى إليه إحسانا أي فعله، وأتى عليهم الدهر بمعنى أفناهم، وتذكر الإتاوة وهي الخراج والجباية، وقال جابر بن حنيّ التغلبي في ذلك بيتا.", "rejected": "المعاجم البلاغية القديمة تمثل ذخيرة لغوية مهمة، وقد اعتنى بها العلماء قديما وحديثا، وهي مادة خصبة للدارسين في أقسام اللغة العربية.", "dataset_stated_rejection_type": "poor_instruction_following", "dataset_note": "poor_instruction_following", "judge_verdict": "FAIL", "judge_rejection_type": "poor_instruction_following", "judge_confidence": 0.6, "chosen_preferred_over_rejected": true, "judge_layer_used": "rules_only", "judge_reasons": ["rejected يتحدث بعمومية عن حقل المعاجم/الدارسين دون الإشارة إلى هذه المادة بعينها ولا شرح مضمونها — تجاهل فعلي للتوجيه في الـprompt.", "الطبقة الدلالية (GATE-AraBert-v1 / CAMeLBERT) غير متاحة في بيئة التشغيل الحالية؛ الحكم معتمد على الطبقة القاعدية فقط، وتم خفض الثقة تبعا لذلك."], "judge_evidence": {"duplicate_check": {"is_identical": false, "similarity": 0.20735785953177258, "diffs": [{"op": "replace", "chosen_span": "ت", "rejected_span": "الم"}, {"op": "replace", "chosen_span": "رض", "rejected_span": "اجم"}, {"op": "replace", "chosen_span": "هذ", "rejected_span": "البلاغي"}, {"op": "insert", "chosen_span": "", "rejected_span": "قديمه تمثل ذخيره لغويه مهمه، وقد اعتني بها العلماء قديما وحديثا، وهي "}, {"op": "replace", "chosen_span": "مع", "rejected_span": "خصبه للد"}, {"op": "insert", "chosen_span": "", "rejected_span": "رسي"}, {"op": "insert", "chosen_span": "", "rejected_span": " ف"}, {"op": "replace", "chosen_span": "لجذر (اتي)، فمنها اتي اليه اح", "rejected_span": "ق"}, {"op": "delete", "chosen_span": "نا اي فعله، واتي عليه", "rejected_span": ""}, {"op": "replace", "chosen_span": "د", "rejected_span": "لغ"}, {"op": "delete", "chosen_span": "ر بمعني افناهم، وتذكر", "rejected_span": ""}, {"op": "replace", "chosen_span": "اتاوه وهي الخ", "rejected_span": "ع"}, {"op": "delete", "chosen_span": "اج والج", "rejected_span": ""}, {"op": "delete", "chosen_span": "ا", "rejected_span": ""}, {"op": "delete", "chosen_span": "، وقال جابر بن حني التغلبي في ذلك بيتا", "rejected_span": ""}], "near_duplicate": false}, "word_overlap": {"jaccard": 0.04081632653061224, "recall_of_a_in_b": 0.06666666666666667, "extra_in_b": ["المعاجم", "البلاغيه", "القديمه", "تمثل", "ذخيره", "لغويه", "مهمه", "وقد", "اعتني", "بها", "العلماء", "قديما", "وحديثا", "ماده", "خصبه", "للدارسين", "اقسام", "اللغه", "العربيه"], "missing_from_b": ["تعرض", "هذه", "الماده", "معاني", "الجذر", "اتي", "اتي", "فمنها", "اليه", "احسانا", "اي", "فعله", "واتي", "عليهم", "الدهر", "بمعني", "افناهم", "وتذكر", "الاتاوه", "الخراج", "والجبايه", "وقال", "جابر", "بن", "حني", "التغلبي", "ذلك", "بيتا"]}, "length_ratio_rejected_over_chosen": 0.7, "suspect_typo_tokens": {"chosen": [], "rejected": []}, "dialect_markers_in_rejected": [], "filler_words_in_rejected": [], "formatting": {"connective_count_rejected": 0, "has_sentence_punct_rejected": true}, "reordering": {"same_clauses_different_order": false, "same_bag_of_words_different_order": false, "chosen_clause_order": ["تعرض هذه الماده معاني الجذر (اتي)", "فمنها اتي اليه احسانا اي فعله", "واتي عليهم الدهر بمعني افناهم", "وتذكر الاتاوه وهي الخراج والجبايه", "وقال جابر بن حني التغلبي في ذلك بيتا"], "rejected_clause_order": ["المعاجم البلاغيه القديمه تمثل ذخيره لغويه مهمه", "وقد اعتني بها العلماء قديما وحديثا", "وهي ماده خصبه للدارسين في اقسام اللغه العربيه"]}, "new_entities": {"new_parenthetical_terms": [], "extra_citation_markers": 0}, "instruction_engagement": {"references_specific_entry": false}}}, {"id": 1, "source_chunk_id": "asas_albalagha_c0001", "prompt": "اشرح مضمون هذه المادة المعجمية.", "chosen": "تعرض هذه المادة معاني الجذر (أتى)، فمنها أتى إليه إحسانا أي فعله، وأتى عليهم الدهر بمعنى أفناهم، وتذكر الإتاوة وهي الخراج والجباية، وقال جابر بن حنيّ التغلبي في ذلك بيتا.", "rejected": "أتى إحسانا فعله الدهر أفناهم الإتاوة الخراج الجباية جابر بن حنيّ التغلبي بيتا", "dataset_stated_rejection_type": "wrong_formatting", "dataset_note": "wrong_formatting", "judge_verdict": "FAIL", "judge_rejection_type": "wrong_formatting", "judge_confidence": 0.8, "chosen_preferred_over_rejected": true, "judge_layer_used": "rules_only", "judge_reasons": ["النص مجرد سلسلة كلمات مفصولة بمسافات دون روابط نحوية أو علامات ترقيم تكوّن جملا.", "الطبقة الدلالية (GATE-AraBert-v1 / CAMeLBERT) غير متاحة في بيئة التشغيل الحالية؛ الحكم معتمد على الطبقة القاعدية فقط، وتم خفض الثقة تبعا لذلك."], "judge_evidence": {"duplicate_check": {"is_identical": false, "similarity": 0.6204081632653061, "diffs": [{"op": "delete", "chosen_span": "تعرض هذه الماده معاني الجذر (", "rejected_span": ""}, {"op": "delete", "chosen_span": ")، فمنها اتي اليه", "rejected_span": ""}, {"op": "delete", "chosen_span": "اي ", "rejected_span": ""}, {"op": "delete", "chosen_span": "، واتي عليهم", "rejected_span": ""}, {"op": "delete", "chosen_span": "بمعني ", "rejected_span": ""}, {"op": "delete", "chosen_span": "، وتذكر", "rejected_span": ""}, {"op": "delete", "chosen_span": "وهي ", "rejected_span": ""}, {"op": "delete", "chosen_span": "و", "rejected_span": ""}, {"op": "delete", "chosen_span": "، وقال", "rejected_span": ""}, {"op": "delete", "chosen_span": "في ذلك ", "rejected_span": ""}, {"op": "delete", "chosen_span": ".", "rejected_span": ""}], "near_duplicate": false}, "word_overlap": {"jaccard": 0.3870967741935484, "recall_of_a_in_b": 0.4, "extra_in_b": ["الجبايه"], "missing_from_b": ["تعرض", "هذه", "الماده", "معاني", "الجذر", "اتي", "فمنها", "اليه", "اي", "واتي", "عليهم", "بمعني", "وتذكر", "وهي", "والجبايه", "وقال", "في", "ذلك"]}, "length_ratio_rejected_over_chosen": 0.433, "suspect_typo_tokens": {"chosen": [], "rejected": []}, "dialect_markers_in_rejected": [], "filler_words_in_rejected": [], "formatting": {"connective_count_rejected": 0, "has_sentence_punct_rejected": false}, "reordering": {"same_clauses_different_order": false, "same_bag_of_words_different_order": false, "chosen_clause_order": ["تعرض هذه الماده معاني الجذر (اتي)", "فمنها اتي اليه احسانا اي فعله", "واتي عليهم الدهر بمعني افناهم", "وتذكر الاتاوه وهي الخراج والجبايه", "وقال جابر بن حني التغلبي في ذلك بيتا"], "rejected_clause_order": ["اتي احسانا فعله الدهر افناهم الاتاوه الخراج الجبايه جابر بن حني التغلبي بيتا"]}, "new_entities": {"new_parenthetical_terms": [], "extra_citation_markers": 0}, "instruction_engagement": {"references_specific_entry": false}}}, {"id": 2, "source_chunk_id": "asas_albalagha_c0001", "prompt": "اشرح مضمون هذه المادة المعجمية.", "chosen": "تعرض هذه المادة معاني الجذر (أتى)، فمنها أتى إليه إحسانا أي فعله، وأتى عليهم الدهر بمعنى أفناهم، وتذكر الإتاوة وهي الخراج والجباية، وقال جابر بن حنيّ التغلبي في ذلك بيتا.", "rejected": "تعرض هذه المادة معاني الجذر (أتى)، فمنها أتى إليه إحسانا أي فعله.", "dataset_stated_rejection_type": "missing_information", "dataset_note": "missing_information", "judge_verdict": "FAIL", "judge_rejection_type": "missing_information", "judge_confidence": 0.75, "chosen_preferred_over_rejected": true, "judge_layer_used": "rules_only", "judge_reasons": ["rejected يغطي فقط 40% من كلمات chosen وأقصر بوضوح دون إضافة معلومات جديدة — حذف جزء من المضمون.", "الطبقة الدلالية (GATE-AraBert-v1 / CAMeLBERT) غير متاحة في بيئة التشغيل الحالية؛ الحكم معتمد على الطبقة القاعدية فقط، وتم خفض الثقة تبعا لذلك."], "judge_evidence": {"duplicate_check": {"is_identical": false, "similarity": 0.5555555555555556, "diffs": [{"op": "delete", "chosen_span": "، واتي عليهم الدهر بمعني افناهم، وتذكر الاتاوه وهي الخراج والجبايه، وقال جابر بن حني التغلبي في ذلك بيتا", "rejected_span": ""}], "near_duplicate": false}, "word_overlap": {"jaccard": 0.4, "recall_of_a_in_b": 0.4, "extra_in_b": [], "missing_from_b": ["واتي", "عليهم", "الدهر", "بمعني", "افناهم", "وتذكر", "الاتاوه", "وهي", "الخراج", "والجبايه", "وقال", "جابر", "بن", "حني", "التغلبي", "في", "ذلك", "بيتا"]}, "length_ratio_rejected_over_chosen": 0.4, "suspect_typo_tokens": {"chosen": [], "rejected": []}, "dialect_markers_in_rejected": [], "filler_words_in_rejected": [], "formatting": {"connective_count_rejected": 1, "has_sentence_punct_rejected": true}, "reordering": {"same_clauses_different_order": false, "same_bag_of_words_different_order": false, "chosen_clause_order": ["تعرض هذه الماده معاني الجذر (اتي)", "فمنها اتي اليه احسانا اي فعله", "واتي عليهم الدهر بمعني افناهم", "وتذكر الاتاوه وهي الخراج والجبايه", "وقال جابر بن حني التغلبي في ذلك بيتا"], "rejected_clause_order": ["تعرض هذه الماده معاني الجذر (اتي)", "فمنها اتي اليه احسانا اي فعله"]}, "new_entities": {"new_parenthetical_terms": [], "extra_citation_markers": 0}, "instruction_engagement": {"references_specific_entry": true}}}, {"id": 3, "source_chunk_id": "asas_albalagha_c0001", "prompt": "اشرح مضمون هذه المادة المعجمية.", "chosen": "تعرض هذه المادة معاني الجذر (أتى)، فمنها أتى إليه إحسانا أي فعله، وأتى عليهم الدهر بمعنى أفناهم، وتذكر الإتاوة وهي الخراج والجباية، وقال جابر بن حنيّ التغلبي في ذلك بيتا.", "rejected": "تعرض هذه المادة معاني الجذر (أتى)، فمنها أتى إليه إحسانا أي فعله، وأتى عليهم الدهر بمعنى أفناهم، وتذكر الإتاوة وهي الخراج والجباية، وقال جابر بن حنيّ التغلبي في ذلك بيتا. وذكر أيضا (زقزق) بمعنى الصياح، وقال سعدان البصري فيها بيتا.", "dataset_stated_rejection_type": "unsupported_additions", "dataset_note": "unsupported_additions", "judge_verdict": "FAIL", "judge_rejection_type": "unsupported_additions", "judge_confidence": 0.85, "chosen_preferred_over_rejected": true, "judge_layer_used": "rules_only", "judge_reasons": ["rejected يضيف كيانات/استشهادات جديدة غير مسندة إلى المصدر: مصطلحات بين قوسين ['زقزق'], استشهادات إضافية=0.", "الطبقة الدلالية (GATE-AraBert-v1 / CAMeLBERT) غير متاحة في بيئة التشغيل الحالية؛ الحكم معتمد على الطبقة القاعدية فقط، وتم خفض الثقة تبعا لذلك."], "judge_evidence": {"duplicate_check": {"is_identical": false, "similarity": 0.8492462311557789, "diffs": [{"op": "insert", "chosen_span": "", "rejected_span": " وذكر ايضا (زقزق) بمعني الصياح، وقال سعدان البصري فيها بيتا."}], "near_duplicate": false}, "word_overlap": {"jaccard": 0.75, "recall_of_a_in_b": 1.0, "extra_in_b": ["بمعني", "وقال", "بيتا", "وذكر", "ايضا", "زقزق", "الصياح", "سعدان", "البصري", "فيها"], "missing_from_b": []}, "length_ratio_rejected_over_chosen": 1.333, "suspect_typo_tokens": {"chosen": [], "rejected": []}, "dialect_markers_in_rejected": [], "filler_words_in_rejected": [], "formatting": {"connective_count_rejected": 6, "has_sentence_punct_rejected": true}, "reordering": {"same_clauses_different_order": false, "same_bag_of_words_different_order": false, "chosen_clause_order": ["تعرض هذه الماده معاني الجذر (اتي)", "فمنها اتي اليه احسانا اي فعله", "واتي عليهم الدهر بمعني افناهم", "وتذكر الاتاوه وهي الخراج والجبايه", "وقال جابر بن حني التغلبي في ذلك بيتا"], "rejected_clause_order": ["تعرض هذه الماده معاني الجذر (اتي)", "فمنها اتي اليه احسانا اي فعله", "واتي عليهم الدهر بمعني افناهم", "وتذكر الاتاوه وهي الخراج والجبايه", "وقال جابر بن حني التغلبي في ذلك بيتا", "وذكر ايضا (زقزق) بمعني الصياح", "وقال سعدان البصري فيها بيتا"]}, "new_entities": {"new_parenthetical_terms": ["زقزق"], "extra_citation_markers": 0}, "instruction_engagement": {"references_specific_entry": true}}}, {"id": 4, "source_chunk_id": "asas_albalagha_c0001", "prompt": "اشرح مضمون هذه المادة المعجمية.", "chosen": "تعرض هذه المادة معاني الجذر (أتى)، فمنها أتى إليه إحسانا أي فعله، وأتى عليهم الدهر بمعنى أفناهم، وتذكر الإتاوة وهي الخراج والجباية، وقال جابر بن حنيّ التغلبي في ذلك بيتا.", "rejected": "الجذر (أتى) معناه ببساطة إنه سوّى إحسان، ولما نقول أتى عليهم الدهر يعني خلصهم. والإتاوة هي الفلوس اللي تتاخذ. وجابر بن حنيّ التغلبي قال فيها بيت.", "dataset_stated_rejection_type": "wrong_register", "dataset_note": "wrong_register", "judge_verdict": "FAIL", "judge_rejection_type": "wrong_register", "judge_confidence": 0.9, "chosen_preferred_over_rejected": true, "judge_layer_used": "rules_only", "judge_reasons": ["وجود مؤشرات عامية ['ببساطه', 'يعني', 'اللي', 'تتاخذ'] في سياق يفترض أن يكون فصيحا (مادة معجمية كلاسيكية).", "الطبقة الدلالية (GATE-AraBert-v1 / CAMeLBERT) غير متاحة في بيئة التشغيل الحالية؛ الحكم معتمد على الطبقة القاعدية فقط، وتم خفض الثقة تبعا لذلك."], "judge_evidence": {"duplicate_check": {"is_identical": false, "similarity": 0.5961538461538461, "diffs": [{"op": "delete", "chosen_span": "تعرض هذه الماده معاني ", "rejected_span": ""}, {"op": "delete", "chosen_span": "،", "rejected_span": ""}, {"op": "delete", "chosen_span": "ف", "rejected_span": ""}, {"op": "insert", "chosen_span": "", "rejected_span": "عناه ببساطه ا"}, {"op": "delete", "chosen_span": "ا", "rejected_span": ""}, {"op": "replace", "chosen_span": "ات", "rejected_span": "سو"}, {"op": "delete", "chosen_span": " اليه", "rejected_span": ""}, {"op": "delete", "chosen_span": "ا اي فعله", "rejected_span": ""}, {"op": "insert", "chosen_span": "", "rejected_span": "لما نقول "}, {"op": "replace", "chosen_span": "بم", "rejected_span": "ي"}, {"op": "replace", "chosen_span": "افنا", "rejected_span": "خلص"}, {"op": "replace", "chosen_span": "،", "rejected_span": "."}, {"op": "delete", "chosen_span": "تذكر ", "rejected_span": ""}, {"op": "delete", "chosen_span": "و", "rejected_span": ""}, {"op": "insert", "chosen_span": "", "rejected_span": "فلوس اللي تتا"}, {"op": "replace", "chosen_span": "راج", "rejected_span": "ذ."}, {"op": "delete", "chosen_span": "الجبايه، وقال ", "rejected_span": ""}, {"op": "insert", "chosen_span": "", "rejected_span": "قال "}, {"op": "replace", "chosen_span": " ذلك", "rejected_span": "ها"}, {"op": "delete", "chosen_span": "ا", "rejected_span": ""}], "near_duplicate": false}, "word_overlap": {"jaccard": 0.16666666666666666, "recall_of_a_in_b": 0.26666666666666666, "extra_in_b": ["معناه", "ببساطه", "انه", "سوي", "احسان", "ولما", "نقول", "يعني", "خلصهم", "والاتاوه", "هي", "الفلوس", "اللي", "تتاخذ", "وجابر", "قال", "فيها", "بيت"], "missing_from_b": ["تعرض", "هذه", "الماده", "معاني", "فمنها", "اليه", "احسانا", "اي", "فعله", "واتي", "بمعني", "افناهم", "وتذكر", "الاتاوه", "وهي", "الخراج", "والجبايه", "وقال", "جابر", "في", "ذلك", "بيتا"]}, "length_ratio_rejected_over_chosen": 0.867, "suspect_typo_tokens": {"chosen": [], "rejected": []}, "dialect_markers_in_rejected": ["ببساطه", "يعني", "اللي", "تتاخذ"], "filler_words_in_rejected": [], "formatting": {"connective_count_rejected": 0, "has_sentence_punct_rejected": true}, "reordering": {"same_clauses_different_order": false, "same_bag_of_words_different_order": false, "chosen_clause_order": ["تعرض هذه الماده معاني الجذر (اتي)", "فمنها اتي اليه احسانا اي فعله", "واتي عليهم الدهر بمعني افناهم", "وتذكر الاتاوه وهي الخراج والجبايه", "وقال جابر بن حني التغلبي في ذلك بيتا"], "rejected_clause_order": ["الجذر (اتي) معناه ببساطه انه سوي احسان", "ولما نقول اتي عليهم الدهر يعني خلصهم", "والاتاوه هي الفلوس اللي تتاخذ", "وجابر بن حني التغلبي قال فيها بيت"]}, "new_entities": {"new_parenthetical_terms": [], "extra_citation_markers": 1}, "instruction_engagement": {"references_specific_entry": false}}}, {"id": 5, "source_chunk_id": "asas_albalagha_c0001", "prompt": "اشرح مضمون هذه المادة المعجمية.", "chosen": "تعرض هذه المادة معاني الجذر (أتى)، فمنها أتى إليه إحسانا أي فعله، وأتى عليهم الدهر بمعنى أفناهم، وتذكر الإتاوة وهي الخراج والجباية، وقال جابر بن حنيّ التغلبي في ذلك بيتا.", "rejected": "تعرض هذه المادة معاني الجذر (أتى)، فمنها أتى إليه إحسانا أي فعله، وأتى عليهم الدهر بمعنى أفناهم، وتذكر الإتاوة وهي الخراج والجباية، وقال جابر بن حنيّ التغلبي في ذلك بيتا. وهذا من المعاني المشهورة المتداولة المعروفة عند أهل اللغة قاطبة، وقد تكلم فيه العلماء والباحثون والدارسون كلاما كثيرا مستفيضا مطولا، وهو باب واسع كبير عظيم يحتاج إلى تأمل ونظر وتدبر وإمعان.", "dataset_stated_rejection_type": "verbosity", "dataset_note": "verbosity", "judge_verdict": "FAIL", "judge_rejection_type": "verbosity", "judge_confidence": 0.9, "chosen_preferred_over_rejected": true, "judge_layer_used": "rules_only", "judge_reasons": ["rejected أطول من chosen بنسبة 2.03x ويحافظ على كل كلمات المصدر تقريبا (100%) دون إضافة أي كيان/معلومة جديدة — إطناب أسلوبي بحت. كلمات حشو ملحوظة: ['المشهوره', 'المتداوله', 'المعروفه', 'قاطبه', 'كثيرا', 'مستفيضا', 'مطولا', 'واسع', 'كبير', 'عظيم'].", "الطبقة الدلالية (GATE-AraBert-v1 / CAMeLBERT) غير متاحة في بيئة التشغيل الحالية؛ الحكم معتمد على الطبقة القاعدية فقط، وتم خفض الثقة تبعا لذلك."], "judge_evidence": {"duplicate_check": {"is_identical": false, "similarity": 0.6401515151515151, "diffs": [{"op": "insert", "chosen_span": "", "rejected_span": " وهذا من المعاني المشهوره المتداوله المعروفه عند اهل اللغه قاطبه، وقد تكلم فيه العلماء والباحثون والدارسون كلاما كثيرا مستفيضا مطولا، وهو باب واسع كبير عظيم يحتاج الي تامل ونظر وتدبر وامعان."}], "near_duplicate": false}, "word_overlap": {"jaccard": 0.4918032786885246, "recall_of_a_in_b": 1.0, "extra_in_b": ["وهذا", "من", "المعاني", "المشهوره", "المتداوله", "المعروفه", "عند", "اهل", "اللغه", "قاطبه", "وقد", "تكلم", "فيه", "العلماء", "والباحثون", "والدارسون", "كلاما", "كثيرا", "مستفيضا", "مطولا", "وهو", "باب", "واسع", "كبير", "عظيم", "يحتاج", "الي", "تامل", "ونظر", "وتدبر", "وامعان"], "missing_from_b": []}, "length_ratio_rejected_over_chosen": 2.033, "suspect_typo_tokens": {"chosen": [], "rejected": []}, "dialect_markers_in_rejected": [], "filler_words_in_rejected": ["المشهوره", "المتداوله", "المعروفه", "قاطبه", "كثيرا", "مستفيضا", "مطولا", "واسع", "كبير", "عظيم"], "formatting": {"connective_count_rejected": 3, "has_sentence_punct_rejected": true}, "reordering": {"same_clauses_different_order": false, "same_bag_of_words_different_order": false, "chosen_clause_order": ["تعرض هذه الماده معاني الجذر (اتي)", "فمنها اتي اليه احسانا اي فعله", "واتي عليهم الدهر بمعني افناهم", "وتذكر الاتاوه وهي الخراج والجبايه", "وقال جابر بن حني التغلبي في ذلك بيتا"], "rejected_clause_order": ["تعرض هذه الماده معاني الجذر (اتي)", "فمنها اتي اليه احسانا اي فعله", "واتي عليهم الدهر بمعني افناهم", "وتذكر الاتاوه وهي الخراج والجبايه", "وقال جابر بن حني التغلبي في ذلك بيتا", "وهذا من المعاني المشهوره المتداوله المعروفه عند اهل اللغه قاطبه", "وقد تكلم فيه العلماء والباحثون والدارسون كلاما كثيرا مستفيضا مطولا", "وهو باب واسع كبير عظيم يحتاج الي تامل ونظر وتدبر وامعان"]}, "new_entities": {"new_parenthetical_terms": [], "extra_citation_markers": 0}, "instruction_engagement": {"references_specific_entry": true}}}, {"id": 6, "source_chunk_id": "asas_albalagha_c0001", "prompt": "اشرح مضمون هذه المادة المعجمية.", "chosen": "تعرض هذه المادة معاني الجذر (أتى)، فمنها أتى إليه إحسانا أي فعله، وأتى عليهم الدهر بمعنى أفناهم، وتذكر الإتاوة وهي الخراج والجباية، وقال جابر بن حنيّ التغلبي في ذلك بيتا.", "rejected": "وقال جابر بن حنيّ التغلبي في ذلك بيتا. وهي الخراج والجباية، وتذكر الإتاوة. بمعنى أفناهم وأتى عليهم الدهر، أي فعله فمنها أتى إليه إحسانا، معاني الجذر (أتى) تعرض هذه المادة.", "dataset_stated_rejection_type": "weak_organization", "dataset_note": "weak_organization", "judge_verdict": "FAIL", "judge_rejection_type": "weak_organization", "judge_confidence": 0.9, "chosen_preferred_over_rejected": true, "judge_layer_used": "rules_only", "judge_reasons": ["نفس الجمل الفرعية بالضبط لكن بترتيب مختلف عن chosen، دون فقد أو إضافة معلومة.", "الطبقة الدلالية (GATE-AraBert-v1 / CAMeLBERT) غير متاحة في بيئة التشغيل الحالية؛ الحكم معتمد على الطبقة القاعدية فقط، وتم خفض الثقة تبعا لذلك."], "judge_evidence": {"duplicate_check": {"is_identical": false, "similarity": 0.2182890855457227, "diffs": [{"op": "delete", "chosen_span": "تعرض هذه الماده معاني الجذر (اتي)، فمنها اتي اليه احسانا اي فعله، واتي عليهم الدهر بمعني افناهم، وتذكر الاتاوه وهي الخراج والجبايه، ", "rejected_span": ""}, {"op": "insert", "chosen_span": "", "rejected_span": " وهي الخراج والجبايه، وتذكر الاتاوه. بمعني افناهم واتي عليهم الدهر، اي فعله فمنها اتي اليه احسانا، معاني الجذر (اتي) تعرض هذه الماده."}], "near_duplicate": false}, "word_overlap": {"jaccard": 1.0, "recall_of_a_in_b": 1.0, "extra_in_b": [], "missing_from_b": []}, "length_ratio_rejected_over_chosen": 1.0, "suspect_typo_tokens": {"chosen": [], "rejected": []}, "dialect_markers_in_rejected": [], "filler_words_in_rejected": [], "formatting": {"connective_count_rejected": 3, "has_sentence_punct_rejected": true}, "reordering": {"same_clauses_different_order": false, "same_bag_of_words_different_order": true, "chosen_clause_order": ["تعرض هذه الماده معاني الجذر (اتي)", "فمنها اتي اليه احسانا اي فعله", "واتي عليهم الدهر بمعني افناهم", "وتذكر الاتاوه وهي الخراج والجبايه", "وقال جابر بن حني التغلبي في ذلك بيتا"], "rejected_clause_order": ["وقال جابر بن حني التغلبي في ذلك بيتا", "وهي الخراج والجبايه", "وتذكر الاتاوه", "بمعني افناهم واتي عليهم الدهر", "اي فعله فمنها اتي اليه احسانا", "معاني الجذر (اتي) تعرض هذه الماده"]}, "new_entities": {"new_parenthetical_terms": [], "extra_citation_markers": 0}, "instruction_engagement": {"references_specific_entry": true}}}, {"id": 7, "source_chunk_id": "asas_albalagha_c0001", "prompt": "اشرح مضمون هذه المادة المعجمية.", "chosen": "تعرض هذه المادة معاني الجذر (أتى)، فمنها أتى إليه إحسانا أي فعله، وأتى عليهم الدهر بمعنى أفناهم، وتذكر الإتاوة وهي الخراج والجباية، وقال جابر بن حنيّ التغلبي في ذلك بيتا.", "rejected": "تعرض هذه المادة معاني الجذر (أتى)، فمنها أتى إليه إحسانا أي فعله، وأتى عليهم الدهر بمعنى أفناهم، وتذكر الإتاوة وهي الخراج والجباية، وقال جابر بن حنيّ التغلبيي في ذلك بيتا.", "dataset_stated_rejection_type": "partial_factual_errors", "dataset_note": "partial_factual_errors", "judge_verdict": "FAIL", "judge_rejection_type": "partial_factual_errors", "judge_confidence": 0.85, "chosen_preferred_over_rejected": true, "judge_layer_used": "rules_only", "judge_reasons": ["تشابه حرفي عالٍ جدا (1.00) مع وجود تحريف صرفي محلي ['التغلبيي'] داخل rejected؛ هذا 'فخ تشابه' كلاسيكي: النص فصيح وقريب لكنه يحمل خطأ في التفاصيل وليس مطابقا دلاليا.", "الطبقة الدلالية (GATE-AraBert-v1 / CAMeLBERT) غير متاحة في بيئة التشغيل الحالية؛ الحكم معتمد على الطبقة القاعدية فقط، وتم خفض الثقة تبعا لذلك."], "judge_evidence": {"duplicate_check": {"is_identical": false, "similarity": 0.9970501474926253, "diffs": [{"op": "insert", "chosen_span": "", "rejected_span": "ي"}], "near_duplicate": true}, "word_overlap": {"jaccard": 0.9354838709677419, "recall_of_a_in_b": 0.9666666666666667, "extra_in_b": ["التغلبيي"], "missing_from_b": ["التغلبي"]}, "length_ratio_rejected_over_chosen": 1.0, "suspect_typo_tokens": {"chosen": [], "rejected": ["التغلبيي"]}, "dialect_markers_in_rejected": [], "filler_words_in_rejected": [], "formatting": {"connective_count_rejected": 3, "has_sentence_punct_rejected": true}, "reordering": {"same_clauses_different_order": false, "same_bag_of_words_different_order": false, "chosen_clause_order": ["تعرض هذه الماده معاني الجذر (اتي)", "فمنها اتي اليه احسانا اي فعله", "واتي عليهم الدهر بمعني افناهم", "وتذكر الاتاوه وهي الخراج والجبايه", "وقال جابر بن حني التغلبي في ذلك بيتا"], "rejected_clause_order": ["تعرض هذه الماده معاني الجذر (اتي)", "فمنها اتي اليه احسانا اي فعله", "واتي عليهم الدهر بمعني افناهم", "وتذكر الاتاوه وهي الخراج والجبايه", "وقال جابر بن حني التغلبيي في ذلك بيتا"]}, "new_entities": {"new_parenthetical_terms": [], "extra_citation_markers": 0}, "instruction_engagement": {"references_specific_entry": true}}}, {"id": 8, "source_chunk_id": "asas_albalagha_c0001", "prompt": "اشرح مضمون هذه المادة المعجمية.", "chosen": "تعرض هذه المادة معاني الجذر (أتى)، فمنها أتى إليه إحسانا أي فعله، وأتى عليهم الدهر بمعنى أفناهم، وتذكر الإتاوة وهي الخراج والجباية، وقال جابر بن حنيّ التغلبي في ذلك بيتا.", "rejected": "تبين هذه المادة ثراء اللغة العربية وقدرتها على التعبير عن المعاني الدقيقة، وهو ما يجعل معاجم البلاغة مرجعا مهما للدارسين وأداة لفهم تطور الدلالة عبر العصور.", "dataset_stated_rejection_type": "less_faithful_reconstruction", "dataset_note": "less_faithful_reconstruction", "judge_verdict": "FAIL", "judge_rejection_type": "less_faithful_reconstruction", "judge_confidence": 0.5, "chosen_preferred_over_rejected": true, "judge_layer_used": "rules_only", "judge_reasons": ["rejected يشير صراحة إلى 'هذه المادة/الجذر' أي يتفاعل مع التوجيه، لكن مضمونه لا يطابق محتوى chosen الفعلي — إعادة بناء غير أمينة للمصدر.", "الطبقة الدلالية (GATE-AraBert-v1 / CAMeLBERT) غير متاحة في بيئة التشغيل الحالية؛ الحكم معتمد على الطبقة القاعدية فقط، وتم خفض الثقة تبعا لذلك."], "judge_evidence": {"duplicate_check": {"is_identical": false, "similarity": 0.3384615384615385, "diffs": [{"op": "replace", "chosen_span": "عرض", "rejected_span": "بين"}, {"op": "insert", "chosen_span": "", "rejected_span": "ثراء اللغه العربيه وقدرتها علي التعبير عن ال"}, {"op": "replace", "chosen_span": "جذر (ات", "rejected_span": "دق"}, {"op": "replace", "chosen_span": ")، فمنها اتي اليه احسانا اي فعل", "rejected_span": "ق"}, {"op": "insert", "chosen_span": "", "rejected_span": "هو م"}, {"op": "replace", "chosen_span": "ت", "rejected_span": " "}, {"op": "replace", "chosen_span": " ", "rejected_span": "ج"}, {"op": "replace", "chosen_span": "يه", "rejected_span": " معاج"}, {"op": "insert", "chosen_span": "", "rejected_span": "بلاغه مرجعا مهما لل"}, {"op": "replace", "chosen_span": "ه", "rejected_span": "ا"}, {"op": "insert", "chosen_span": "", "rejected_span": "سين"}, {"op": "replace", "chosen_span": "بمعني ", "rejected_span": "و"}, {"op": "replace", "chosen_span": "فن", "rejected_span": "د"}, {"op": "insert", "chosen_span": "", "rejected_span": " لفه"}, {"op": "delete", "chosen_span": "،", "rejected_span": ""}, {"op": "insert", "chosen_span": "", "rejected_span": "تط"}, {"op": "delete", "chosen_span": "تذك", "rejected_span": ""}, {"op": "insert", "chosen_span": "", "rejected_span": "دل"}, {"op": "replace", "chosen_span": "تاو", "rejected_span": "ل"}, {"op": "replace", "chosen_span": "وهي", "rejected_span": "عبر"}, {"op": "replace", "chosen_span": "خ", "rejected_span": "عصو"}, {"op": "delete", "chosen_span": "اج والجبايه، وقال جابر بن حني التغلبي في ذلك بيتا", "rejected_span": ""}], "near_duplicate": false}, "word_overlap": {"jaccard": 0.037037037037037035, "recall_of_a_in_b": 0.06666666666666667, "extra_in_b": ["تبين", "ثراء", "اللغه", "العربيه", "وقدرتها", "علي", "التعبير", "عن", "المعاني", "الدقيقه", "وهو", "ما", "يجعل", "معاجم", "البلاغه", "مرجعا", "مهما", "للدارسين", "واداه", "لفهم", "تطور", "الدلاله", "عبر", "العصور"], "missing_from_b": ["تعرض", "معاني", "الجذر", "اتي", "اتي", "فمنها", "اليه", "احسانا", "اي", "فعله", "واتي", "عليهم", "الدهر", "بمعني", "افناهم", "وتذكر", "الاتاوه", "وهي", "الخراج", "والجبايه", "وقال", "جابر", "بن", "حني", "التغلبي", "في", "ذلك", "بيتا"]}, "length_ratio_rejected_over_chosen": 0.867, "suspect_typo_tokens": {"chosen": [], "rejected": []}, "dialect_markers_in_rejected": [], "filler_words_in_rejected": [], "formatting": {"connective_count_rejected": 0, "has_sentence_punct_rejected": true}, "reordering": {"same_clauses_different_order": false, "same_bag_of_words_different_order": false, "chosen_clause_order": ["تعرض هذه الماده معاني الجذر (اتي)", "فمنها اتي اليه احسانا اي فعله", "واتي عليهم الدهر بمعني افناهم", "وتذكر الاتاوه وهي الخراج والجبايه", "وقال جابر بن حني التغلبي في ذلك بيتا"], "rejected_clause_order": ["تبين هذه الماده ثراء اللغه العربيه وقدرتها علي التعبير عن المعاني الدقيقه", "وهو ما يجعل معاجم البلاغه مرجعا مهما للدارسين واداه لفهم تطور الدلاله عبر العصور"]}, "new_entities": {"new_parenthetical_terms": [], "extra_citation_markers": 0}, "instruction_engagement": {"references_specific_entry": true}}}, {"id": 9, "source_chunk_id": "asas_albalagha_c0001", "prompt": "اشرح مضمون هذه المادة المعجمية.", "chosen": "تعرض هذه المادة معاني الجذر (أتى)، فمنها أتى إليه إحسانا أي فعله، وأتى عليهم الدهر بمعنى أفناهم، وتذكر الإتاوة وهي الخراج والجباية، وقال جابر بن حنيّ التغلبيي في ذلك بيتا.", "rejected": "تعرض هذه المادة معاني الجذر (أتى)، فمنها أتى إليه إحسانا أي فعله، وأتى عليهم الدهر بمعنى أفناهم، وتذكر الإتاوة وهي الخراج والجباية، وقال جابر بن حنيّ التغلبي في ذلك بيتا.", "dataset_stated_rejection_type": "partial_factual_errors", "dataset_note": "BROKEN: swapped halves (rejected is the good one)", "judge_verdict": "FAIL", "judge_rejection_type": "SUSPECT_QUALITY_REVERSAL", "judge_confidence": 0.75, "chosen_preferred_over_rejected": false, "judge_layer_used": "rules_only", "judge_reasons": ["النص chosen يحوي صيغة غير مألوفة صرفيا ['التغلبيي'] بينما rejected خالٍ منها مع تشابه حرفي عالٍ جدا؛ هذا مؤشر على احتمال عكس أو دمج خاطئ لأزواج DPO.", "الطبقة الدلالية (GATE-AraBert-v1 / CAMeLBERT) غير متاحة في بيئة التشغيل الحالية؛ الحكم معتمد على الطبقة القاعدية فقط، وتم خفض الثقة تبعا لذلك.", "علم جودة بيانات (data-quality flag) وليس rejection_type قياسيا — يحتاج تدقيق الزوج نفسه."], "judge_evidence": {"duplicate_check": {"is_identical": false, "similarity": 0.9970501474926253, "diffs": [{"op": "delete", "chosen_span": "ي", "rejected_span": ""}], "near_duplicate": true}, "word_overlap": {"jaccard": 0.9354838709677419, "recall_of_a_in_b": 0.9666666666666667, "extra_in_b": ["التغلبي"], "missing_from_b": ["التغلبيي"]}, "length_ratio_rejected_over_chosen": 1.0, "suspect_typo_tokens": {"chosen": ["التغلبيي"], "rejected": []}, "dialect_markers_in_rejected": [], "filler_words_in_rejected": [], "formatting": {"connective_count_rejected": 3, "has_sentence_punct_rejected": true}, "reordering": {"same_clauses_different_order": false, "same_bag_of_words_different_order": false, "chosen_clause_order": ["تعرض هذه الماده معاني الجذر (اتي)", "فمنها اتي اليه احسانا اي فعله", "واتي عليهم الدهر بمعني افناهم", "وتذكر الاتاوه وهي الخراج والجبايه", "وقال جابر بن حني التغلبيي في ذلك بيتا"], "rejected_clause_order": ["تعرض هذه الماده معاني الجذر (اتي)", "فمنها اتي اليه احسانا اي فعله", "واتي عليهم الدهر بمعني افناهم", "وتذكر الاتاوه وهي الخراج والجبايه", "وقال جابر بن حني التغلبي في ذلك بيتا"]}, "new_entities": {"new_parenthetical_terms": [], "extra_citation_markers": 0}, "instruction_engagement": {"references_specific_entry": true}}}, {"id": 10, "source_chunk_id": "asas_albalagha_c0001", "prompt": "اشرح مضمون هذه المادة المعجمية.", "chosen": "تعرض هذه المادة معاني الجذر (أتى)، فمنها أتى إليه إحسانا أي فعله، وأتى عليهم الدهر بمعنى أفناهم، وتذكر الإتاوة وهي الخراج والجباية، وقال جابر بن حنيّ التغلبي في ذلك بيتا.", "rejected": "تعرض هذه المادة معاني الجذر (أتى)، فمنها أتى إليه إحسانا أي فعله، وأتى عليهم الدهر بمعنى أفناهم، وتذكر الإتاوة وهي الخراج والجباية، وقال جابر بن حنيّ التغلبي في ذلك بيتا.", "dataset_stated_rejection_type": "partial_factual_errors", "dataset_note": "BROKEN: mislabeled (halves identical, claims a factual error)", "judge_verdict": "FAIL", "judge_rejection_type": "INVALID_PAIR_IDENTICAL", "judge_confidence": 0.99, "chosen_preferred_over_rejected": false, "judge_layer_used": "rules_only", "judge_reasons": ["chosen و rejected متطابقان تماما بعد التطبيع؛ لا يوجد فرق يبرر تفضيل أحدهما.", "الطبقة الدلالية (GATE-AraBert-v1 / CAMeLBERT) غير متاحة في بيئة التشغيل الحالية؛ الحكم معتمد على الطبقة القاعدية فقط، وتم خفض الثقة تبعا لذلك.", "علم جودة بيانات (data-quality flag) وليس rejection_type قياسيا — يحتاج تدقيق الزوج نفسه."], "judge_evidence": {"duplicate_check": {"is_identical": true, "similarity": 1.0, "diffs": []}, "word_overlap": {"jaccard": 1.0, "recall_of_a_in_b": 1.0, "extra_in_b": [], "missing_from_b": []}, "length_ratio_rejected_over_chosen": 1.0, "suspect_typo_tokens": {"chosen": [], "rejected": []}, "dialect_markers_in_rejected": [], "filler_words_in_rejected": [], "formatting": {"connective_count_rejected": 3, "has_sentence_punct_rejected": true}, "reordering": {"same_clauses_different_order": false, "same_bag_of_words_different_order": false, "chosen_clause_order": ["تعرض هذه الماده معاني الجذر (اتي)", "فمنها اتي اليه احسانا اي فعله", "واتي عليهم الدهر بمعني افناهم", "وتذكر الاتاوه وهي الخراج والجبايه", "وقال جابر بن حني التغلبي في ذلك بيتا"], "rejected_clause_order": ["تعرض هذه الماده معاني الجذر (اتي)", "فمنها اتي اليه احسانا اي فعله", "واتي عليهم الدهر بمعني افناهم", "وتذكر الاتاوه وهي الخراج والجبايه", "وقال جابر بن حني التغلبي في ذلك بيتا"]}, "new_entities": {"new_parenthetical_terms": [], "extra_citation_markers": 0}, "instruction_engagement": {"references_specific_entry": true}}}]
+;
+
+const TYPE_LABELS = {
+  poor_instruction_following: "تجاهل التوجيه",
+  wrong_formatting: "تنسيق خاطئ",
+  missing_information: "نقص معلومة",
+  unsupported_additions: "إضافات غير مسندة",
+  wrong_register: "خلل في المستوى اللغوي",
+  verbosity: "إطناب",
+  weak_organization: "ضعف تنظيم",
+  partial_factual_errors: "خطأ واقعي جزئي",
+  less_faithful_reconstruction: "إعادة بناء غير أمينة",
+  INVALID_PAIR_IDENTICAL: "⚑ الزوج متطابق (عطب بيانات)",
+  SUSPECT_QUALITY_REVERSAL: "⚑ اشتباه انعكاس الجودة (عطب بيانات)",
+};
+
+function stampClass(v, type){
+  if(type === "INVALID_PAIR_IDENTICAL" || type === "SUSPECT_QUALITY_REVERSAL") return "FLAG";
+  return v;
+}
+
+function render(){
+  const q = document.getElementById('search').value.trim();
+  const vf = document.getElementById('verdictFilter').value;
+  const tf = document.getElementById('typeFilter').value;
+  const lowConfOnly = document.getElementById('lowConfBtn').classList.contains('active');
+
+  let rows = DATA.filter(r => {
+    if(q && !(r.chosen.includes(q) || r.rejected.includes(q) || (r.source_chunk_id||"").includes(q))) return false;
+    const sc = stampClass(r.judge_verdict, r.judge_rejection_type);
+    if(vf === "FLAG" && sc !== "FLAG") return false;
+    if(vf && vf !== "FLAG" && r.judge_verdict !== vf) return false;
+    if(tf && r.judge_rejection_type !== tf) return false;
+    if(lowConfOnly && r.judge_confidence >= 0.6) return false;
+    return true;
+  });
+
+  const wrap = document.getElementById('cards');
+  wrap.innerHTML = "";
+  if(rows.length === 0){
+    wrap.innerHTML = '<div class="empty">لا توجد حالات مطابقة لعوامل التصفية.</div>';
+    return;
+  }
+
+  for(const r of rows){
+    const sc = stampClass(r.judge_verdict, r.judge_rejection_type);
+    const card = document.createElement('div');
+    card.className = 'card';
+    const typeLabel = TYPE_LABELS[r.judge_rejection_type] || r.judge_rejection_type || "—";
+    const pct = Math.round(r.judge_confidence * 100);
+
+    card.innerHTML = `
+      <div class="stamp ${sc}">${r.judge_verdict.replace('_','\u200b_')}</div>
+      <div class="card-top">
+        <div class="rej-type">${typeLabel}</div>
+        <div class="meta">#${r.id} · ${r.source_chunk_id || ''} · الطبقة: ${r.judge_layer_used} · ثقة ${pct}%</div>
+      </div>
+      <div class="conf-bar"><div class="conf-fill" style="width:${pct}%"></div></div>
+      <div class="meta" style="margin-bottom:8px">هل يُفضَّل chosen على rejected؟
+        <b style="color:${r.chosen_preferred_over_rejected===true?'var(--pass)':(r.chosen_preferred_over_rejected===false?'var(--fail)':'var(--review)')}">
+          ${r.chosen_preferred_over_rejected===true?'نعم':(r.chosen_preferred_over_rejected===false?'لا — الزوج مشكوك فيه':'غير محسوم')}
+        </b>
+      </div>
+      <div class="texts">
+        <div class="text-block chosen"><div class="lbl">CHOSEN (المرجع)</div>${r.chosen}</div>
+        <div class="text-block rejected"><div class="lbl">REJECTED (الحالة المقيَّمة) — البيانات تُعلن: ${r.dataset_stated_rejection_type || '—'}</div>${r.rejected}</div>
+      </div>
+      <ul class="reasons">${r.judge_reasons.map(x=>`<li>${x}</li>`).join('')}</ul>
+      <details>
+        <summary>عرض الأدلة الخام (evidence)</summary>
+        <div class="evidence-json">${escapeHtml(JSON.stringify(r.judge_evidence, null, 2))}</div>
+      </details>
+      <div class="review-row" data-id="${r.id}">
+        <span class="note">مراجعة بشرية:</span>
+        <button class="agree">✓ موافق على الحكم</button>
+        <button class="disagree">✗ غير موافق</button>
+        <span class="note review-status"></span>
+      </div>
+    `;
+    wrap.appendChild(card);
+
+    const agreeBtn = card.querySelector('.agree');
+    const disagreeBtn = card.querySelector('.disagree');
+    const statusEl = card.querySelector('.review-status');
+
+    loadReview(r.id).then(v => paintReview(v, agreeBtn, disagreeBtn, statusEl));
+
+    agreeBtn.onclick = async () => {
+      await saveReview(r.id, 'agree');
+      paintReview('agree', agreeBtn, disagreeBtn, statusEl);
+    };
+    disagreeBtn.onclick = async () => {
+      await saveReview(r.id, 'disagree');
+      paintReview('disagree', agreeBtn, disagreeBtn, statusEl);
+    };
+  }
+}
+
+function paintReview(v, agreeBtn, disagreeBtn, statusEl){
+  agreeBtn.classList.toggle('active', v === 'agree');
+  disagreeBtn.classList.toggle('active', v === 'disagree');
+  statusEl.textContent = v === 'agree' ? 'سُجّلت الموافقة' : (v === 'disagree' ? 'سُجّل الاعتراض' : '');
+}
+
+async function saveReview(id, value){
+  try{
+    if(window.storage){
+      await window.storage.set('review:' + id, value);
+    }
+  }catch(e){ console.error('storage error', e); }
+}
+async function loadReview(id){
+  try{
+    if(window.storage){
+      const res = await window.storage.get('review:' + id);
+      return res ? res.value : null;
+    }
+  }catch(e){ return null; }
+  return null;
+}
+
+function escapeHtml(s){
+  return s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+}
+
+function renderStats(){
+  const total = DATA.length;
+  const byVerdict = {};
+  for(const r of DATA){
+    const sc = stampClass(r.judge_verdict, r.judge_rejection_type);
+    byVerdict[sc] = (byVerdict[sc]||0) + 1;
+  }
+  const flagged = DATA.filter(r => r.judge_rejection_type === 'INVALID_PAIR_IDENTICAL' || r.judge_rejection_type === 'SUSPECT_QUALITY_REVERSAL').length;
+  const avgConf = (DATA.reduce((s,r)=>s+r.judge_confidence,0)/total).toFixed(2);
+  const el = document.getElementById('stats');
+  el.innerHTML = `
+    <div class="stat"><b>${total}</b>إجمالي الحالات</div>
+    <div class="stat"><b>${byVerdict.FAIL||0}</b>FAIL</div>
+    <div class="stat"><b>${byVerdict.NEEDS_REVIEW||0}</b>NEEDS_REVIEW</div>
+    <div class="stat"><b>${flagged}</b>أعلام عطب بيانات</div>
+    <div class="stat"><b>${avgConf}</b>متوسط الثقة</div>
+  `;
+}
+
+function populateTypeFilter(){
+  const sel = document.getElementById('typeFilter');
+  const types = [...new Set(DATA.map(r => r.judge_rejection_type).filter(Boolean))];
+  for(const t of types){
+    const opt = document.createElement('option');
+    opt.value = t;
+    opt.textContent = TYPE_LABELS[t] || t;
+    sel.appendChild(opt);
+  }
+}
+
+document.getElementById('search').addEventListener('input', render);
+document.getElementById('verdictFilter').addEventListener('change', render);
+document.getElementById('typeFilter').addEventListener('change', render);
+document.getElementById('lowConfBtn').addEventListener('click', (e) => {
+  e.target.classList.toggle('active');
+  render();
+});
+
+renderStats();
+populateTypeFilter();
+render();
+</script>
+</body>
+</html>
