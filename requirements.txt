@@ -1,5 +1,0 @@
-# الطبقة القاعدية (rule_signals.py) لا تحتاج أي مكتبة خارجية - stdlib فقط.
-# هذه المكتبات مطلوبة فقط لتفعيل الطبقة الدلالية في model_signals.py.
-transformers>=4.40.0
-torch>=2.1.0
-sentence-transformers>=2.6.0
