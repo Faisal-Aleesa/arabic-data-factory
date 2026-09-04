@@ -387,7 +387,7 @@ see:
 
 **So anyone with write access can push unaudited Arabic content, and nothing in this
 repository will stop them or notice.** That has already happened once: a web upload in
-September 2026 added eleven files and modified two, none of it screened. It audited clean
+September 2026 added ten files and modified two, none of it screened. It audited clean
 when checked afterwards by hand, but that was luck rather than control — and the same
 upload silently deleted this README and `requirements.txt`, which is how the gap was
 noticed at all.
