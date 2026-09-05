@@ -88,11 +88,18 @@ Step 3 is the first time this project spends money. Measured on the current fixt
 suite is **29 calls / ~68,500 input tokens / ~8,700 output tokens** — 24 probes plus 5
 position-swap passes.
 
-> **`data/judge_transcript.jsonl` must be gitignored before step 3.** It records prompts,
-> and a prompt embeds the full source chunk. A transcript over dialect probes therefore
-> inherits the dialect corpus's rights-pending status, exactly like
-> `tests/fixtures/*saudi_dialect*`. Add the ignore rule in the same commit that creates
-> the file, per the rule in the session handoff.
+> **Transcripts are already gitignored — you do not need to do anything.** The rule is
+> `.gitignore:280`, added before any transcript existed. It records prompts, and a prompt
+> embeds the full source chunk, so a transcript over dialect probes inherits the dialect
+> corpus's rights-pending status exactly like `tests/fixtures/*saudi_dialect*`.
+>
+> The pattern is `*[Jj][Uu][Dd][Gg][Ee]*[Tt][Rr][Aa][Nn][Ss][Cc][Rr][Ii][Pp][Tt]*`,
+> deliberately broad and case-folded: it covers rotation or splitting by date or run id,
+> the hyphen spelling, compressed and numbered variants, a `judge_transcripts/` directory,
+> and any location — not only `data/`. So name your transcript whatever suits you.
+>
+> If you ever need to publish one, `git add -f` is the deliberate override, and it should
+> only ever be used on a transcript you have confirmed is classical-only.
 
 ## Reading the result
 

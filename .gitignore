@@ -255,6 +255,30 @@ docs/citation_review_saudi_dialect.csv
 # (tests/fixtures/candidates_classical_lexicon.jsonl) is CC BY-SA and is NOT ignored.
 tests/fixtures/*saudi_dialect*
 
+# LLM judge transcripts (Task 3, Group B). Added BEFORE any transcript exists, because
+# the first real judge run is the moment the risk appears and a rule added afterwards is
+# a rule added too late.
+#
+# judge_client.CachingBackend records the full prompt of every call so a paid run can be
+# replayed offline for free. A judge prompt EMBEDS THE ENTIRE SOURCE CHUNK - see
+# judge_sft.USER_TEMPLATE and judge_dpo.USER_TEMPLATE - so a transcript over dialect
+# probes contains verbatim rights-pending source text, and inherits its status exactly
+# like facts_saudi_dialect.jsonl above. A classical-only transcript would be CC BY-SA and
+# safe, but the two are indistinguishable by filename, and getting that judgement wrong
+# once publishes the corpus. Ignore all of them.
+#
+# سجلّات الحَكَم تتضمّن نص المصدر كاملًا، فترث حالة الحقوق نفسها.
+#
+# The pattern is deliberately broad and case-folded. It covers rotation and splitting by
+# date or run id (judge_transcript_2026-09-05.jsonl, judge_transcript_run42.jsonl,
+# .jsonl.1, .gz), the hyphen spelling, a judge_transcripts/ directory and everything
+# under it, and any directory - not just data/. Case-folding is not paranoia: this repo
+# has already shipped one ignore rule (docs/*handoff*.md) that worked only because
+# Windows sets core.ignorecase, and would have missed a mixed-case file on a teammate's
+# Linux clone. Verified against a simulated case-sensitive clone: 14 transcript spellings
+# ignored, and the committed judge modules, fixtures and docs all still tracked.
+*[Jj][Uu][Dd][Gg][Ee]*[Tt][Rr][Aa][Nn][Ss][Cc][Rr][Ii][Pp][Tt]*
+
 # Session handoff notes: local continuity between working sessions. NEVER committed.
 # They carry in-progress context, unreleased decisions and rights questions still open,
 # and a local-only commit could be swept into a future push by accident. Keeping them
