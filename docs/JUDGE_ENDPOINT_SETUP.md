@@ -43,6 +43,33 @@ python src/verification/judge_backend_http.py --describe
 That prints the base URL, model, dialect, and `api_key_present: true|false`. It never
 prints the key.
 
+## Quickstart with any OpenAI-compatible endpoint
+
+You do **not** need Qwen to get a real signal. Any OpenAI-compatible endpoint works with
+no code change — a cheap hosted model, a free tier, or something local (vLLM, Ollama's
+OpenAI shim, LM Studio). Only the four variables above change.
+
+**Verified end to end**, not assumed: the suite has been run against a live
+OpenAI-compatible HTTP server over the real network stack, using only these exports and
+no edits. The transport, auth header, response parsing, usage accounting, position-swap
+logic and transcript recording all worked unmodified.
+
+```bash
+export JUDGE_API_BASE_URL="http://127.0.0.1:11434/v1"   # or any hosted /v1 base
+export JUDGE_API_MODEL="<whatever the endpoint calls the model>"
+export JUDGE_API_KEY_VAR="MY_PROVIDER_KEY"
+export MY_PROVIDER_KEY="<key, or any placeholder for a local server that ignores it>"
+python src/verification/judge_suite.py --run --backend http
+```
+
+Note the base URL ends at `/v1`; the adapter appends `/chat/completions` itself. If your
+provider's base already includes the full path, pass `path=''` via `EndpointConfig`
+instead.
+
+The two results worth reading first are **SFT-06** (gameability) and **SFT-07**
+(discrimination) — see "Reading the result" below. A weak or cheap model failing those is
+itself a useful finding: it tells you the judge cannot be a sole gate.
+
 ## Which dialect
 
 `openai_chat` is the default and covers most hosted Qwen deployments — DashScope's
