@@ -109,13 +109,27 @@ change ships, not after. It is the assumption that makes hard rejection defensib
 
 ## Judge vs rule-based disagreement
 
-**⚠️ POLICY, NOT YET CODE.** `acceptance_decision()` does not implement any of this: no
-judge exists to produce a verdict, so there is nothing to test the interaction against.
-Do not assume the code enforces it. When real judge output exists, implement the table
-below and add self-test cases for every cell before wiring it into acceptance.
+**⚠️ PARTLY CODE AS OF 2026-09-05. The distinction below matters.**
 
-**سياسة، لم تُبرمج بعد.** لا وجود لحَكَمٍ يُنتج حكمًا حتى الآن، فلا شيء يُختبر عليه
-التفاعل. لا تفترض أن الشيفرة تطبّق هذا.
+The table is now implemented, as `judge_sft.combine_with_rules()` and
+`judge_dpo.combine_with_dpo_rules()`, and every cell of both is pinned by a self-test.
+What has NOT happened is the wiring: `acceptance_decision()` in `verify_sft.py` still
+knows nothing about a judge, and the live acceptance path is unchanged. Nothing in this
+repo calls the combination functions in production.
+
+That gap is deliberate. No real model has scored a single record - the judging backend
+is a Qwen instance whose endpoint and credential are still pending - so the functions
+are exercised against scripted answers and 24 hand-built probes. That validates the
+TABLE. It says nothing about whether a real judge's verdicts are worth combining.
+Wire it only after real judge output has been scored against
+`tests/fixtures/judge_*_classical_lexicon.jsonl`.
+
+**سياسة مُبرمجة جزئيًا: الجدول مُنفّذ ومُختبر، لكنه غير موصول بمسار القبول بعد.**
+
+One asymmetry the DPO side adds deliberately: `NEEDS_JUDGE` is `check_dpo.py`
+*delegating* the decision, so a judge PASS there CONFIRMS the pair. A rule-based
+`REVIEW` on the SFT side is *uncertainty*, and a judge PASS does not resolve it.
+Delegation and uncertainty are different states and are combined differently.
 
 The two layers answer different questions and are not interchangeable. The rule-based
 layer checks verifiable propositions against the source: does this year match, is this
