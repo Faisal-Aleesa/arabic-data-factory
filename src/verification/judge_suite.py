@@ -159,6 +159,87 @@ def load_corpus():
     return chunks, missing
 
 
+# ------------------------------------------------- the merged DPO path (src/dpo)
+#
+# The probe suite has to validate whatever actually ships. After the LLM_Judge delivery
+# was integrated, the shipping DPO judge is `src/dpo/llm_judge.judge_pair()` behind
+# `judge_pipeline.adjudicate()` - NOT the standalone `judge_dpo.judge_dpo_pair()` these
+# probes were originally written against. A test asset pointed at a module that no longer
+# runs in production is worse than no test: it reports green about code nobody executes.
+#
+# So `--dpo-path merged` (the default) drives the delivery's judge, and `legacy` keeps the
+# standalone one available for comparison. The gameability and discrimination probes are
+# SFT-side and always run through `judge_sft.py`, which the delivery did not replace.
+
+DPO_PATH_MERGED = 'merged'
+DPO_PATH_LEGACY = 'legacy'
+
+
+def _merged_modules():
+    """Import the delivery package lazily; it is optional for a classical-only run."""
+    p = os.path.join(REPO, 'src', 'dpo')
+    if p not in sys.path:
+        sys.path.insert(0, p)
+    import judge_contract as jcon
+    import llm_judge as lj
+    import judge_provider as jprov
+    return jcon, lj, jprov
+
+
+def _to_our_verdict(res):
+    """Map the delivery's JudgeResult onto this suite's verdict vocabulary.
+
+    `unavailable/PositionBias` maps to REVIEW rather than ABSTAIN on purpose: the judge
+    did answer twice, and the refusal is a finding about the judge, not a failure to
+    reach it. That matches what the standalone judge_dpo.py reported for the same
+    condition, so a matrix produced before and after the merge stays comparable.
+    """
+    if res.status == 'ok':
+        a = res.judge_output.assessment
+        if a == 'chosen_better':
+            return jc.JUDGE_PASS
+        if a == 'rejected_better':
+            return jc.JUDGE_FAIL
+        return jc.JUDGE_REVIEW
+    if res.error_type == 'PositionBias':
+        return jc.JUDGE_REVIEW
+    return jc.JUDGE_ABSTAIN
+
+
+def judge_dpo_merged(pair, chunk_text, backend, ledger=None, probe_id=None):
+    """Judge one fixture pair through the delivery's judge, over our HTTP backend."""
+    jcon, lj, jprov = _merged_modules()
+    client = jprov.BackendJudgeClient(
+        jprov.ClientConfig.from_env(provider='suite', model=getattr(backend, 'model_id',
+                                                                   'unknown')),
+        backend=backend)
+    ji = jcon.JudgeInput(
+        prompt=pair.get('prompt', ''),
+        chosen=pair.get('chosen', ''),
+        rejected=pair.get('rejected', ''),
+        source_chunk_id=pair.get('source_chunk_id', ''),
+        source_region=pair.get('source_region', ''),
+        rejection_type=pair.get('rejection_type', ''),
+        model_version=pair.get('model_version', 'suite'),
+        format_type=pair.get('format_type'),
+        source_text=chunk_text or '',
+        deterministic_signals={},
+    )
+    before = getattr(backend, '_suite_calls', 0)
+    res = lj.judge_pair(ji, client, case_label=probe_id)
+    if ledger is not None:
+        ledger.record(None, abstained=(res.status != 'ok'))
+    return {'judge_verdict': _to_our_verdict(res),
+            'reason': res.reason or (res.judge_output.assessment
+                                     if res.judge_output else None),
+            'error_type': res.error_type,
+            'position_biased': (res.error_type == 'PositionBias') or None,
+            'corroborated': (res.judge_output.rejection_type_agrees_with_record
+                             if res.judge_output else None),
+            'passes': 2 if pair.get('rejection_type') in lj.SWAP_CHECK_TYPES else 1,
+            'dpo_path': DPO_PATH_MERGED}
+
+
 # ------------------------------------------------------------------------------ validate
 
 def validate(sft_rows, dpo_rows, chunks):
@@ -272,7 +353,8 @@ def dry_run(sft_rows, dpo_rows, chunks, price_in=None, price_out=None):
 
 # ----------------------------------------------------------------------------- run + score
 
-def run_suite(sft_rows, dpo_rows, chunks, backend, ledger=None):
+def run_suite(sft_rows, dpo_rows, chunks, backend, ledger=None,
+              dpo_path=DPO_PATH_MERGED):
     results = []
     for r in sft_rows:
         chunk = chunks.get(r['source_chunk_id'], {})
@@ -281,8 +363,13 @@ def run_suite(sft_rows, dpo_rows, chunks, backend, ledger=None):
         results.append(('SFT', r, res))
     for r in dpo_rows:
         chunk = chunks.get(r['source_chunk_id'], {})
-        res = jdpo.judge_dpo_pair(r, chunk.get('chunk_text', ''), backend,
-                                  ledger=ledger, probe_id=r['label'].split()[0])
+        pid = r['label'].split()[0]
+        if dpo_path == DPO_PATH_MERGED:
+            res = judge_dpo_merged(r, chunk.get('chunk_text', ''), backend,
+                                   ledger=ledger, probe_id=pid)
+        else:
+            res = jdpo.judge_dpo_pair(r, chunk.get('chunk_text', ''), backend,
+                                      ledger=ledger, probe_id=pid)
         results.append(('DPO', r, res))
     return results
 
@@ -435,7 +522,7 @@ def run_self_test():
         by_key[pid] = payload
         by_key[pid + '_swap'] = payload      # same slot both times => position bias
     be = jc.ScriptedBackend(by_key=by_key)
-    sc = score(run_suite(sft, dpo, chunks, be))
+    sc = score(run_suite(sft, dpo, chunks, be, dpo_path=DPO_PATH_LEGACY))
     if sc['accuracy'] is None or sc['accuracy'] > 0.75:
         print('  [FAIL] a judge that passes everything scored %s - the suite does not '
               'discriminate' % sc['accuracy'])
@@ -459,6 +546,48 @@ def run_self_test():
               % d['calls'])
         ok = False
 
+    # The MERGED path is what ships, so the suite must be able to drive it and must still
+    # catch position bias through it. Scripted in the DELIVERY's wire format, which is
+    # different from the legacy block above - that difference is the whole reason this
+    # assertion exists separately rather than being folded into it.
+    import json as _json
+    zero_cov = [r for r in dpo if r.get('rejection_type') in jdpo.NO_AUTOMATED_COVERAGE]
+    if zero_cov:
+        r0 = zero_cov[0]
+        pid = r0['label'].split()[0]
+        same_slot = _json.dumps({
+            'schema_version': 'judge-1', 'judge_model_version': 'suite/scripted',
+            'assessment': 'chosen_better', 'weakness_present': False,
+            'rejection_type': None, 'rejection_type_agrees_with_record': None,
+            'type_scores': {}, 'confidence': 0.9, 'evidence': [], 'notes': None})
+        be_m = jc.ScriptedBackend(by_key={pid: same_slot, pid + '_swap': same_slot})
+        res = judge_dpo_merged(r0, chunks.get(r0['source_chunk_id'], {}).get('chunk_text', ''),
+                               be_m, probe_id=pid)
+        if not res.get('position_biased') or res['judge_verdict'] != jc.JUDGE_REVIEW:
+            print('  [FAIL] merged DPO path did not catch position bias on %r: %s'
+                  % (pid, res))
+            ok = False
+        if res.get('dpo_path') != DPO_PATH_MERGED:
+            print('  [FAIL] merged path did not label itself')
+            ok = False
+        # a covered type must still cost one call through the merged path
+        covered = [r for r in dpo
+                   if r.get('rejection_type') not in jdpo.NO_AUTOMATED_COVERAGE]
+        if covered:
+            rc = covered[0]
+            pidc = rc['label'].split()[0]
+            good = _json.dumps({
+                'schema_version': 'judge-1', 'judge_model_version': 'suite/scripted',
+                'assessment': 'chosen_better', 'weakness_present': False,
+                'rejection_type': None, 'rejection_type_agrees_with_record': None,
+                'type_scores': {}, 'confidence': 0.9, 'evidence': [], 'notes': None})
+            be_c = jc.ScriptedBackend(by_key={pidc: good})
+            rr = judge_dpo_merged(rc, chunks.get(rc['source_chunk_id'], {}).get('chunk_text', ''),
+                                  be_c, probe_id=pidc)
+            if rr['judge_verdict'] != jc.JUDGE_PASS or rr.get('passes') != 1:
+                print('  [FAIL] merged path on a covered type: %s' % rr)
+                ok = False
+
     if missing:
         print('  [note] corpora not present on this machine: %s' % ', '.join(missing))
     print('  [note] fixtures loaded: %s' % ', '.join(loaded))
@@ -477,6 +606,9 @@ if __name__ == '__main__':
     ap.add_argument('--dry-run', action='store_true')
     ap.add_argument('--run', action='store_true')
     ap.add_argument('--backend', default='qwen')
+    ap.add_argument('--dpo-path', choices=[DPO_PATH_MERGED, DPO_PATH_LEGACY],
+                    default=DPO_PATH_MERGED,
+                    help='which DPO judge to exercise; merged = the shipping src/dpo path')
     ap.add_argument('--transcript', help='record/replay JSONL for offline reruns')
     ap.add_argument('--replay-only', action='store_true')
     ap.add_argument('--price-in', type=float)
@@ -514,7 +646,9 @@ if __name__ == '__main__':
             backend = jc.CachingBackend(backend, a.transcript,
                                         replay_only=a.replay_only)
         led = jc.UsageLedger(a.price_in, a.price_out)
-        sc = score(run_suite(sft_rows, dpo_rows, chunks, backend, ledger=led))
+        sc = score(run_suite(sft_rows, dpo_rows, chunks, backend, ledger=led,
+                             dpo_path=a.dpo_path))
+        sys.stderr.write('DPO path: %s\\n' % a.dpo_path)
         print_matrix(sc, led)
         sys.exit(0)
 

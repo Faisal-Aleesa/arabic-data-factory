@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Arabic LLM Judge — Quality Evaluation</title>
+<style>
+  :root{
+    --ink:#14211f;
+    --paper:#f6f4ee;
+    --panel:#ffffff;
+    --line:#dcd6c8;
+    --teal:#1f5c52;
+    --teal-deep:#123f38;
+    --amber:#b8792a;
+    --amber-bg:#fbf0dd;
+    --rose:#a83b3b;
+    --rose-bg:#faeaea;
+    --green:#2f7a4f;
+    --green-bg:#e9f4ec;
+    --muted:#6b675c;
+    --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:"Tahoma","Segoe UI",-apple-system,sans-serif;
+    line-height:1.65;
+  }
+  header{
+    padding:44px 32px 30px;
+    border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,#fff,var(--paper));
+  }
+  header .wrap, main, footer .wrap{max-width:1040px;margin:0 auto;}
+  h1{
+    margin:0 0 6px;
+    font-size:clamp(26px,3.4vw,38px);
+    font-weight:700;
+    color:var(--teal-deep);
+    letter-spacing:-0.01em;
+  }
+  .subtitle{
+    margin:0;
+    font-size:16px;
+    color:var(--muted);
+  }
+  .prov-note{
+    margin-top:18px;
+    padding:14px 16px;
+    background:var(--amber-bg);
+    border:1px solid #e8cf9e;
+    border-radius:6px;
+    font-size:13.5px;
+    color:#5f4a1f;
+  }
+  .prov-note b{color:var(--amber);}
+  main{padding:34px 32px 60px;}
+  .summary-row{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+    gap:12px;
+    margin-bottom:32px;
+  }
+  .stat{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:16px 18px;
+  }
+  .stat .num{font-size:28px;font-weight:700;color:var(--teal-deep);}
+  .stat .lab{font-size:13px;color:var(--muted);margin-top:2px;}
+  .stat.needs .num{color:var(--amber);}
+  .stat.flag .num{color:var(--rose);}
+  .stat.calls .num{color:var(--teal);}
+
+  .legend{
+    display:flex;flex-wrap:wrap;gap:10px 18px;
+    margin-bottom:22px;font-size:13px;color:var(--muted);
+  }
+  .legend span{display:inline-flex;align-items:center;gap:6px;}
+  .dot{width:9px;height:9px;border-radius:50%;display:inline-block;}
+
+  .case{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:10px;
+    margin-bottom:16px;
+    overflow:hidden;
+  }
+  .case-head{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    padding:16px 20px;
+    cursor:pointer;
+    user-select:none;
+  }
+  .case-head:hover{background:#fbfaf6;}
+  .case-title{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+  .case-title .type{font-weight:700;font-size:16px;}
+  .badge{
+    font-size:12.5px;
+    padding:3px 10px;
+    border-radius:999px;
+    font-weight:600;
+    white-space:nowrap;
+  }
+  .badge.AUTO_CONFIRM{background:var(--green-bg);color:var(--green);}
+  .badge.NEEDS_JUDGE{background:var(--amber-bg);color:var(--amber);}
+  .badge.FLAG_SUSPICIOUS{background:var(--rose-bg);color:var(--rose);}
+  .badge.support{background:#eef2f0;color:var(--teal);}
+  .badge.assess-chosen_better{background:var(--green-bg);color:var(--green);}
+  .badge.assess-rejected_better{background:var(--rose-bg);color:var(--rose);}
+  .badge.assess-equivalent{background:#eef2f0;color:var(--teal);}
+  .conf{font-size:13px;color:var(--muted);font-family:var(--mono);}
+  .chevron{transition:transform .15s ease;color:var(--muted);font-size:13px;}
+  .case.open .chevron{transform:rotate(90deg);}
+
+  .case-body{
+    display:none;
+    padding:0 20px 22px;
+    border-top:1px solid var(--line);
+  }
+  .case.open .case-body{display:block;}
+  .grid2{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:18px;
+    margin-top:18px;
+  }
+  @media (max-width:680px){.grid2{grid-template-columns:1fr;}}
+  .block{
+    background:#fbfaf6;
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:14px 16px;
+  }
+  .block h4{
+    margin:0 0 10px;
+    font-size:13px;
+    text-transform:none;
+    color:var(--teal-deep);
+    font-weight:700;
+  }
+  .kv{display:flex;justify-content:space-between;gap:10px;font-size:13.5px;padding:4px 0;border-bottom:1px dashed #e6e1d3;}
+  .kv:last-child{border-bottom:none;}
+  .kv .k{color:var(--muted);}
+  .kv .v{font-family:var(--mono);font-size:13px;text-align:left;direction:ltr;}
+  .unavailable{
+    font-size:13px;color:#8a7a4d;background:#fdf7ea;border:1px dashed #e3d3a0;
+    padding:10px 12px;border-radius:6px;
+  }
+  .evidence-item{
+    margin-top:8px;
+    padding:10px 12px;
+    background:#fff;
+    border:1px solid var(--line);
+    border-radius:6px;
+    font-size:13.5px;
+  }
+  .evidence-item .q{
+    font-family:var(--mono);
+    background:#f1f5f2;
+    border-radius:4px;
+    padding:2px 6px;
+    display:inline-block;
+    margin-top:4px;
+    direction:rtl;
+  }
+  .evidence-item .from{font-size:11.5px;color:var(--muted);margin-top:6px;}
+  .support-signal{
+    margin-top:14px;
+    padding:12px 14px;
+    background:#eef4f1;
+    border:1px solid #cfe1d8;
+    border-radius:8px;
+  }
+  .support-signal .tag{
+    font-size:11.5px;font-weight:700;color:var(--teal);
+    background:#dcece4;padding:2px 8px;border-radius:999px;
+  }
+  .support-signal .markers{font-family:var(--mono);font-size:13px;margin-top:8px;}
+  .marker-chip{
+    display:inline-block;background:#fff;border:1px solid #cfe1d8;
+    padding:2px 8px;border-radius:6px;margin:2px 4px 0 0;font-size:12.5px;
+  }
+  .not-called{
+    margin-top:16px;
+    font-size:13.5px;
+    color:var(--muted);
+    background:#f1f0ea;
+    border-radius:6px;
+    padding:10px 12px;
+  }
+  .src-line{font-size:12px;color:var(--muted);margin-top:6px;}
+  footer{padding:24px 32px 50px;border-top:1px solid var(--line);}
+  footer p{font-size:12.5px;color:var(--muted);}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <h1>Arabic LLM Judge — Quality Evaluation</h1>
+    <p class="subtitle">Unified Quality Evaluation for Arabic Post-Training Data</p>
+    <div class="prov-note" id="prov-note"></div>
+  </div>
+</header>
+
+<main>
+  <div class="summary-row" id="summary-row"></div>
+
+  <div class="legend">
+    <span><span class="dot" style="background:var(--green)"></span> AUTO_CONFIRM — deterministic pass, no LLM call</span>
+    <span><span class="dot" style="background:var(--amber)"></span> NEEDS_JUDGE — LLM Judge invoked</span>
+    <span><span class="dot" style="background:var(--rose)"></span> FLAG_SUSPICIOUS — deterministic flag, no LLM call</span>
+    <span><span class="dot" style="background:var(--teal)"></span> supporting signal (not a verdict signal)</span>
+  </div>
+
+  <div id="cases"></div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>مصدر البيانات: <code>dashboard_data.json</code>، نتاج تشغيل فعلي لكود الـLLM Judge المُسلَّم (judge_contract.py / judge_client.py / llm_judge.py / dialect_markers.py) — وليس بيانات ثابتة يدوية.</p>
+  </div>
+</footer>
+
+<script id="judge-data" type="application/json">
+{"generated_by": "src/dpo/generate_dashboard_data.py", "data_provenance": "Every row is produced by actually executing the delivered judge_contract.py / judge_client.py / llm_judge.py / dialect_markers.py against the same fixture chunk (atc_c0001) and the same nine rejected-candidate texts src/dpo/test_llm_judge.py uses. No JudgeOutput in this file was hand-typed and then labeled as if validated - each one passed through judge_contract.validate_judge_output(). The LLM replies themselves are offline-replayed via RecordedJudgeClient because this sandbox has no network access / JUDGE_API_KEY; judge_model_version is left as the honest \"recorded/offline\" rather than disguised as live. chosen_pct/rejected_pct/similarity/format-check numbers are marked available=false rather than invented, because check_dpo.py / verify_sft.py (Phase 1) are not part of this delivery bundle.", "summary": {"AUTO_CONFIRM": 2, "NEEDS_JUDGE": 6, "FLAG_SUSPICIOUS": 1, "llm_calls_made": 6}, "rows": [{"rejection_type": "poor_instruction_following", "source_chunk_id": "atc_c0001", "source_region": "classical", "unified_verdict": "NEEDS_JUDGE", "unified_verdict_source": "test_llm_judge.py's EXPECTED_VERDICT, confirmed by test_report.txt's layer_B PASS rows against the real check_dpo.check_pair()", "llm_called": true, "deterministic_signals": {"available": false, "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."}, "similarity_signals": {"available": false, "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."}, "factual_signals": {"available": true, "source": "llm_judge.judge_pair() -> judge_contract.validate_judge_output() (real contract validation, offline-replayed judge reply)", "type_scores": {"poor_instruction_following": 0.86}, "weakness_present": true}, "judge": {"status": "ok", "judge_model_version": "recorded/offline", "assessment": "chosen_better", "weakness_present": true, "rejection_type": "poor_instruction_following", "rejection_type_agrees_with_record": true, "type_scores": {"poor_instruction_following": 0.86}, "confidence": 0.82, "evidence": [{"claim": "rejected ignores the dictionary-entry instruction and gives a generic essay about old lexicons instead of glossing the root", "quote_from": "rejected", "quote": "المعاجم البلاغية القديمة تمثل ذخيرة لغوية مهمة", "explains_type": "poor_instruction_following"}], "notes": null}, "dialect_markers_in_rejected": {"signal": "dialect_markers_in_rejected", "signal_kind": "supporting", "has_dialect_markers": false, "markers_found": []}}, {"rejection_type": "wrong_formatting", "source_chunk_id": "atc_c0001", "source_region": "classical", "unified_verdict": "AUTO_CONFIRM", "unified_verdict_source": "test_llm_judge.py's EXPECTED_VERDICT, confirmed by test_report.txt's layer_B PASS rows against the real check_dpo.check_pair()", "llm_called": false, "deterministic_signals": {"available": false, "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."}, "similarity_signals": {"available": false, "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."}, "factual_signals": {"available": false, "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."}, "judge": {"status": "not_called", "reason": "AUTO_CONFIRM is resolved deterministically by check_dpo.check_pair() - per judge_pipeline.adjudicate(), no LLM call is made and no `judge` key is attached."}, "dialect_markers_in_rejected": {"signal": "dialect_markers_in_rejected", "signal_kind": "supporting", "has_dialect_markers": false, "markers_found": []}}, {"rejection_type": "missing_information", "source_chunk_id": "atc_c0001", "source_region": "classical", "unified_verdict": "NEEDS_JUDGE", "unified_verdict_source": "test_llm_judge.py's EXPECTED_VERDICT, confirmed by test_report.txt's layer_B PASS rows against the real check_dpo.check_pair()", "llm_called": true, "deterministic_signals": {"available": false, "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."}, "similarity_signals": {"available": false, "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."}, "factual_signals": {"available": true, "source": "llm_judge.judge_pair() -> judge_contract.validate_judge_output() (real contract validation, offline-replayed judge reply)", "type_scores": {"missing_information": 0.79}, "weakness_present": true}, "judge": {"status": "ok", "judge_model_version": "recorded/offline", "assessment": "chosen_better", "weakness_present": true, "rejection_type": "missing_information", "rejection_type_agrees_with_record": true, "type_scores": {"missing_information": 0.79}, "confidence": 0.77, "evidence": [{"claim": "rejected drops the أتى عليهم الدهر / الإتاوة senses that chosen keeps", "quote_from": "chosen", "quote": "وتذكر الإتاوة وهي الخراج والجباية", "explains_type": "missing_information"}], "notes": null}, "dialect_markers_in_rejected": {"signal": "dialect_markers_in_rejected", "signal_kind": "supporting", "has_dialect_markers": false, "markers_found": []}}, {"rejection_type": "unsupported_additions", "source_chunk_id": "atc_c0001", "source_region": "classical", "unified_verdict": "NEEDS_JUDGE", "unified_verdict_source": "test_llm_judge.py's EXPECTED_VERDICT, confirmed by test_report.txt's layer_B PASS rows against the real check_dpo.check_pair()", "llm_called": true, "deterministic_signals": {"available": false, "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."}, "similarity_signals": {"available": false, "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."}, "factual_signals": {"available": true, "source": "llm_judge.judge_pair() -> judge_contract.validate_judge_output() (real contract validation, offline-replayed judge reply)", "type_scores": {"unsupported_additions": 0.88}, "weakness_present": true}, "judge": {"status": "ok", "judge_model_version": "recorded/offline", "assessment": "chosen_better", "weakness_present": true, "rejection_type": "unsupported_additions", "rejection_type_agrees_with_record": true, "type_scores": {"unsupported_additions": 0.88}, "confidence": 0.85, "evidence": [{"claim": "rejected invents a second entry (زقزق) not present in the source chunk", "quote_from": "rejected", "quote": "وذكر أيضا (زقزق) بمعنى الصياح", "explains_type": "unsupported_additions"}], "notes": null}, "dialect_markers_in_rejected": {"signal": "dialect_markers_in_rejected", "signal_kind": "supporting", "has_dialect_markers": false, "markers_found": []}}, {"rejection_type": "wrong_register", "source_chunk_id": "atc_c0001", "source_region": "classical", "unified_verdict": "NEEDS_JUDGE", "unified_verdict_source": "test_llm_judge.py's EXPECTED_VERDICT, confirmed by test_report.txt's layer_B PASS rows against the real check_dpo.check_pair()", "llm_called": true, "deterministic_signals": {"available": false, "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."}, "similarity_signals": {"available": false, "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."}, "factual_signals": {"available": true, "source": "llm_judge.judge_pair() -> judge_contract.validate_judge_output() (real contract validation, offline-replayed judge reply)", "type_scores": {"wrong_register": 0.74}, "weakness_present": true}, "judge": {"status": "ok", "judge_model_version": "recorded/offline", "assessment": "chosen_better", "weakness_present": true, "rejection_type": "wrong_register", "rejection_type_agrees_with_record": true, "type_scores": {"wrong_register": 0.74}, "confidence": 0.7, "evidence": [{"claim": "rejected shifts into spoken/dialectal phrasing for a classical dictionary-entry task that calls for Modern Standard Arabic", "quote_from": "rejected", "quote": "يعني هالجذر أتى", "explains_type": "wrong_register"}], "notes": "assessed on register/phrasing suited to the task, not merely on the presence of dialect tokens - see dialect_markers_in_rejected for the separate supporting signal"}, "dialect_markers_in_rejected": {"signal": "dialect_markers_in_rejected", "signal_kind": "supporting", "has_dialect_markers": true, "markers_found": ["يعني", "هالجذر", "اللي"]}, "register_supporting_signals": {"judge_type_score_wrong_register": 0.74, "judge_rejection_type_agrees_with_record": true, "dialect_markers_in_rejected": {"signal": "dialect_markers_in_rejected", "signal_kind": "supporting", "has_dialect_markers": true, "markers_found": ["يعني", "هالجذر", "اللي"]}, "note": "dialect_markers_in_rejected is a SUPPORTING signal only - the Judge and check_dpo never use it to decide wrong_register or any verdict."}}, {"rejection_type": "verbosity", "source_chunk_id": "atc_c0001", "source_region": "classical", "unified_verdict": "NEEDS_JUDGE", "unified_verdict_source": "test_llm_judge.py's EXPECTED_VERDICT, confirmed by test_report.txt's layer_B PASS rows against the real check_dpo.check_pair()", "llm_called": true, "deterministic_signals": {"available": false, "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."}, "similarity_signals": {"available": false, "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."}, "factual_signals": {"available": true, "source": "llm_judge.judge_pair() -> judge_contract.validate_judge_output() (real contract validation, offline-replayed judge reply)", "type_scores": {"verbosity": 0.81}, "weakness_present": true}, "judge": {"status": "ok", "judge_model_version": "recorded/offline", "assessment": "chosen_better", "weakness_present": true, "rejection_type": "verbosity", "rejection_type_agrees_with_record": true, "type_scores": {"verbosity": 0.81}, "confidence": 0.8, "evidence": [{"claim": "rejected pads the entry with a generic filler clause that adds no lexical content", "quote_from": "rejected", "quote": "وهو باب واسع كبير عظيم", "explains_type": "verbosity"}], "notes": null}, "dialect_markers_in_rejected": {"signal": "dialect_markers_in_rejected", "signal_kind": "supporting", "has_dialect_markers": false, "markers_found": []}}, {"rejection_type": "weak_organization", "source_chunk_id": "atc_c0001", "source_region": "classical", "unified_verdict": "NEEDS_JUDGE", "unified_verdict_source": "test_llm_judge.py's EXPECTED_VERDICT, confirmed by test_report.txt's layer_B PASS rows against the real check_dpo.check_pair()", "llm_called": true, "deterministic_signals": {"available": false, "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."}, "similarity_signals": {"available": false, "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."}, "factual_signals": {"available": true, "source": "llm_judge.judge_pair() -> judge_contract.validate_judge_output() (real contract validation, offline-replayed judge reply)", "type_scores": {"weak_organization": 0.72}, "weakness_present": true}, "judge": {"status": "ok", "judge_model_version": "recorded/offline", "assessment": "chosen_better", "weakness_present": true, "rejection_type": "weak_organization", "rejection_type_agrees_with_record": true, "type_scores": {"weak_organization": 0.72}, "confidence": 0.68, "evidence": [{"claim": "rejected reverses the entry so the citation opens the passage and the headword trails at the end", "quote_from": "rejected", "quote": "وقال جابر بن حني التغلبي في ذلك بيتا. وهي الخراج والجباية", "explains_type": "weak_organization"}], "notes": null}, "dialect_markers_in_rejected": {"signal": "dialect_markers_in_rejected", "signal_kind": "supporting", "has_dialect_markers": false, "markers_found": []}}, {"rejection_type": "partial_factual_errors", "source_chunk_id": "atc_c0001", "source_region": "classical", "unified_verdict": "AUTO_CONFIRM", "unified_verdict_source": "test_llm_judge.py's EXPECTED_VERDICT, confirmed by test_report.txt's layer_B PASS rows against the real check_dpo.check_pair()", "llm_called": false, "deterministic_signals": {"available": false, "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."}, "similarity_signals": {"available": false, "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."}, "factual_signals": {"available": false, "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."}, "judge": {"status": "not_called", "reason": "AUTO_CONFIRM is resolved deterministically by check_dpo.check_pair() - per judge_pipeline.adjudicate(), no LLM call is made and no `judge` key is attached."}, "dialect_markers_in_rejected": {"signal": "dialect_markers_in_rejected", "signal_kind": "supporting", "has_dialect_markers": false, "markers_found": []}}, {"rejection_type": "less_faithful_reconstruction", "source_chunk_id": "atc_c0001", "source_region": "classical", "unified_verdict": "FLAG_SUSPICIOUS", "unified_verdict_source": "test_llm_judge.py's EXPECTED_VERDICT, confirmed by test_report.txt's layer_B PASS rows against the real check_dpo.check_pair()", "llm_called": false, "deterministic_signals": {"available": false, "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."}, "similarity_signals": {"available": false, "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."}, "factual_signals": {"available": false, "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."}, "judge": {"status": "not_called", "reason": "FLAG_SUSPICIOUS is resolved deterministically by check_dpo.check_pair() - per judge_pipeline.adjudicate(), no LLM call is made and no `judge` key is attached."}, "dialect_markers_in_rejected": {"signal": "dialect_markers_in_rejected", "signal_kind": "supporting", "has_dialect_markers": false, "markers_found": []}}]}
+</script>
+<script>
+const data = JSON.parse(document.getElementById('judge-data').textContent);
+
+const TYPE_LABELS = {
+  poor_instruction_following: 'ضعف اتباع التعليمات',
+  wrong_formatting: 'تنسيق غير صحيح',
+  missing_information: 'معلومات ناقصة',
+  unsupported_additions: 'إضافات غير مدعومة',
+  wrong_register: 'سجل لغوي غير مناسب',
+  verbosity: 'إسهاب',
+  weak_organization: 'ضعف التنظيم',
+  partial_factual_errors: 'أخطاء واقعية جزئية',
+  less_faithful_reconstruction: 'إعادة صياغة أقل أمانة للمصدر',
+};
+
+// --- provenance note ---
+document.getElementById('prov-note').innerHTML =
+  '<b>مصدر المخرجات:</b> ' + escapeHtml(data.data_provenance);
+
+// --- summary stats ---
+const s = data.summary;
+const statHtml = (num, lab, cls) =>
+  `<div class="stat ${cls||''}"><div class="num">${num}</div><div class="lab">${lab}</div></div>`;
+document.getElementById('summary-row').innerHTML =
+  statHtml(data.rows.length, 'إجمالي الحالات') +
+  statHtml(s.AUTO_CONFIRM, 'AUTO_CONFIRM', '') +
+  statHtml(s.NEEDS_JUDGE, 'NEEDS_JUDGE', 'needs') +
+  statHtml(s.FLAG_SUSPICIOUS, 'FLAG_SUSPICIOUS', 'flag') +
+  statHtml(s.llm_calls_made, 'استدعاءات الـJudge الفعلية', 'calls');
+
+function escapeHtml(str){
+  return String(str).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+function signalBlock(title, sig){
+  if(!sig){ return ''; }
+  if(sig.available === false){
+    return `<div class="block"><h4>${title}</h4><div class="unavailable">غير متاح في هذه البيئة: ${escapeHtml(sig.reason)}</div></div>`;
+  }
+  let rows = '';
+  if(sig.type_scores){
+    for(const [k,v] of Object.entries(sig.type_scores)){
+      rows += `<div class="kv"><span class="k">${escapeHtml(k)}</span><span class="v">${v}</span></div>`;
+    }
+  }
+  if(sig.weakness_present !== undefined){
+    rows += `<div class="kv"><span class="k">weakness_present</span><span class="v">${sig.weakness_present}</span></div>`;
+  }
+  if(sig.source){
+    rows += `<div class="src-line">${escapeHtml(sig.source)}</div>`;
+  }
+  return `<div class="block"><h4>${title}</h4>${rows || '<div class="unavailable">لا توجد قيم</div>'}</div>`;
+}
+
+function caseCard(row, idx){
+  const verdict = row.unified_verdict;
+  const j = row.judge;
+  const assessBadge = (j && j.status === 'ok')
+    ? `<span class="badge assess-${j.assessment}">${j.assessment}</span>`
+    : '';
+  const confBadge = (j && j.status === 'ok')
+    ? `<span class="conf">confidence ${j.confidence}</span>` : '';
+
+  let body = '';
+
+  if(!row.llm_called){
+    body += `<div class="not-called">🔒 لم يُستدعَ الـJudge لهذه الحالة — الحكم ${verdict} صادر عن الطبقة الحتمية (check_dpo.check_pair) فقط، حسب تصميم judge_pipeline.adjudicate(). ${j && j.reason ? escapeHtml(j.reason) : ''}</div>`;
+  } else if(j && j.status === 'ok'){
+    body += '<div class="grid2">';
+    body += signalBlock('Deterministic signals', row.deterministic_signals);
+    body += signalBlock('Similarity signals', row.similarity_signals);
+    body += signalBlock('Factual signals', row.factual_signals);
+    body += `<div class="block"><h4>Judge assessment</h4>
+      <div class="kv"><span class="k">assessment</span><span class="v">${j.assessment}</span></div>
+      <div class="kv"><span class="k">confidence</span><span class="v">${j.confidence}</span></div>
+      <div class="kv"><span class="k">rejection_type_agrees_with_record</span><span class="v">${j.rejection_type_agrees_with_record}</span></div>
+      <div class="kv"><span class="k">judge_model_version</span><span class="v">${escapeHtml(j.judge_model_version)}</span></div>
+      </div>`;
+    body += '</div>';
+
+    body += `<div class="block" style="margin-top:14px;"><h4>Evidence</h4>`;
+    (j.evidence||[]).forEach(ev=>{
+      body += `<div class="evidence-item">
+        <div>${escapeHtml(ev.claim)}</div>
+        <div class="q">"${escapeHtml(ev.quote)}"</div>
+        <div class="from">quote_from: ${ev.quote_from} · explains_type: ${escapeHtml(ev.explains_type||'—')}</div>
+      </div>`;
+    });
+    if(j.notes){
+      body += `<div class="src-line" style="margin-top:8px;">ملاحظة الـJudge: ${escapeHtml(j.notes)}</div>`;
+    }
+    body += `</div>`;
+  } else if(j){
+    body += `<div class="not-called">⚠️ فشل استدعاء الـJudge: ${escapeHtml(j.status)} / ${escapeHtml(j.error_type||'')} — ${escapeHtml(j.reason||'')} (الحكم يبقى ${verdict}, لم يتغيّر تلقائيًا).</div>`;
+  }
+
+  const dm = row.dialect_markers_in_rejected;
+  const markerChips = (dm.markers_found||[]).map(m=>`<span class="marker-chip">${escapeHtml(m)}</span>`).join('');
+  body += `<div class="support-signal">
+    <span class="tag">supporting signal — ليس verdict</span>
+    <div style="margin-top:8px;font-size:13.5px;">dialect_markers_in_rejected:
+      <b>${dm.has_dialect_markers ? 'موجودة' : 'غير موجودة'}</b>
+    </div>
+    ${markerChips ? `<div class="markers">${markerChips}</div>` : ''}
+  </div>`;
+
+  return `
+  <div class="case" id="case-${idx}">
+    <div class="case-head" onclick="document.getElementById('case-${idx}').classList.toggle('open')">
+      <div class="case-title">
+        <span class="type">${TYPE_LABELS[row.rejection_type] || row.rejection_type}</span>
+        <span class="badge ${verdict}">${verdict}</span>
+        ${assessBadge}
+        ${confBadge}
+      </div>
+      <span class="chevron">◀</span>
+    </div>
+    <div class="case-body">${body}</div>
+  </div>`;
+}
+
+document.getElementById('cases').innerHTML =
+  data.rows.map((r,i)=>caseCard(r,i)).join('');
+</script>
+</body>
+</html>

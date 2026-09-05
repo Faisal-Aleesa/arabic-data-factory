@@ -1,0 +1,111 @@
+passed: True
+case                                                                                 | expected                                 | actual                                   | result
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+layer_A: contract round-trip for type 'poor_instruction_following'                   | status=ok, rejection_type='poor_instruct | status=ok, rejection_type='poor_instruct | PASS
+layer_A: contract round-trip for type 'wrong_formatting'                             | status=ok, rejection_type='wrong_formatt | status=ok, rejection_type='wrong_formatt | PASS
+layer_A: contract round-trip for type 'missing_information'                          | status=ok, rejection_type='missing_infor | status=ok, rejection_type='missing_infor | PASS
+layer_A: contract round-trip for type 'unsupported_additions'                        | status=ok, rejection_type='unsupported_a | status=ok, rejection_type='unsupported_a | PASS
+layer_A: contract round-trip for type 'wrong_register'                               | status=ok, rejection_type='wrong_registe | status=ok, rejection_type='wrong_registe | PASS
+layer_A: contract round-trip for type 'verbosity'                                    | status=ok, rejection_type='verbosity'    | status=ok, rejection_type='verbosity'    | PASS
+layer_A: contract round-trip for type 'weak_organization'                            | status=ok, rejection_type='weak_organiza | status=ok, rejection_type='weak_organiza | PASS
+layer_A: contract round-trip for type 'partial_factual_errors'                       | status=ok, rejection_type='partial_factu | status=ok, rejection_type='partial_factu | PASS
+layer_A: contract round-trip for type 'less_faithful_reconstruction'                 | status=ok, rejection_type='less_faithful | status=ok, rejection_type='less_faithful | PASS
+layer_A: similarity trap (high pct both sides)                                       | assessment=chosen_better despite high si | status=ok assessment=chosen_better       | PASS
+layer_A: hallucinated evidence quote                                                 | status=unavailable, error_type=InvalidJu | status=unavailable, error_type=InvalidJu | PASS
+layer_A: provider returns non-JSON text                                              | status=unavailable, error_type=InvalidJS | status=unavailable, error_type=InvalidJS | PASS
+layer_A: transport failure (timeout)                                                 | status=unavailable, error_type=TimeoutEr | status=unavailable, error_type=TimeoutEr | PASS
+layer_A: transport failure (rate_limited)                                            | status=unavailable, error_type=RateLimit | status=unavailable, error_type=RateLimit | PASS
+layer_A: transport failure (provider_error)                                          | status=unavailable, error_type=ProviderE | status=unavailable, error_type=ProviderE | PASS
+layer_A: judge output smuggles verdict=AUTO_CONFIRM field                            | status=unavailable (rejected outright)   | status=unavailable                       | PASS
+layer_A: judge sets assessment="AUTO_CONFIRM"                                        | status=unavailable (not a valid assessme | status=unavailable                       | PASS
+layer_B: check_pair() verdict for 'poor_instruction_following' (real, not stubbed)   | NEEDS_JUDGE                              | NEEDS_JUDGE                              | PASS
+layer_B: 'poor_instruction_following' (NEEDS_JUDGE) DOES call the Judge              | 1 call, judge.status=ok                  | 1 calls, judge=ok                        | PASS
+layer_B: check_pair() verdict for 'wrong_formatting' (real, not stubbed)             | AUTO_CONFIRM                             | AUTO_CONFIRM                             | PASS
+layer_B: 'wrong_formatting' (AUTO_CONFIRM) makes NO LLM call                         | 0 calls, no judge key                    | 0 calls, judge key present=False         | PASS
+layer_B: check_pair() verdict for 'missing_information' (real, not stubbed)          | NEEDS_JUDGE                              | NEEDS_JUDGE                              | PASS
+layer_B: 'missing_information' (NEEDS_JUDGE) DOES call the Judge                     | 1 call, judge.status=ok                  | 1 calls, judge=ok                        | PASS
+layer_B: check_pair() verdict for 'unsupported_additions' (real, not stubbed)        | NEEDS_JUDGE                              | NEEDS_JUDGE                              | PASS
+layer_B: 'unsupported_additions' (NEEDS_JUDGE) DOES call the Judge                   | 1 call, judge.status=ok                  | 1 calls, judge=ok                        | PASS
+layer_B: check_pair() verdict for 'wrong_register' (real, not stubbed)               | NEEDS_JUDGE                              | NEEDS_JUDGE                              | PASS
+layer_B: 'wrong_register' (NEEDS_JUDGE) DOES call the Judge                          | 1 call, judge.status=ok                  | 1 calls, judge=ok                        | PASS
+layer_B: check_pair() verdict for 'verbosity' (real, not stubbed)                    | NEEDS_JUDGE                              | NEEDS_JUDGE                              | PASS
+layer_B: 'verbosity' (NEEDS_JUDGE) DOES call the Judge                               | 1 call, judge.status=ok                  | 1 calls, judge=ok                        | PASS
+layer_B: check_pair() verdict for 'weak_organization' (real, not stubbed)            | NEEDS_JUDGE                              | NEEDS_JUDGE                              | PASS
+layer_B: 'weak_organization' (NEEDS_JUDGE) DOES call the Judge                       | 1 call, judge.status=ok                  | 1 calls, judge=ok                        | PASS
+layer_B: check_pair() verdict for 'partial_factual_errors' (real, not stubbed)       | AUTO_CONFIRM                             | AUTO_CONFIRM                             | PASS
+layer_B: 'partial_factual_errors' (AUTO_CONFIRM) makes NO LLM call                   | 0 calls, no judge key                    | 0 calls, judge key present=False         | PASS
+layer_B: check_pair() verdict for 'less_faithful_reconstruction' (real, not stubbed) | FLAG_SUSPICIOUS                          | FLAG_SUSPICIOUS                          | PASS
+layer_B: 'less_faithful_reconstruction' (FLAG_SUSPICIOUS) makes NO LLM call          | 0 calls, no judge key                    | 0 calls, judge key present=False         | PASS
+layer_B: identical chosen/rejected                                                   | FLAG_SUSPICIOUS (degenerate pair), 0 LLM | FLAG_SUSPICIOUS, 0 calls                 | PASS
+layer_B: rejected completely unrelated to source                                     | FLAG_SUSPICIOUS, 0 LLM calls             | FLAG_SUSPICIOUS, 0 calls                 | PASS
+layer_B: judge failure (timeout) leaves verdict untouched                            | verdict=NEEDS_JUDGE, judge.status=unavai | verdict=NEEDS_JUDGE, judge.status=unavai | PASS
+layer_B: judge failure (rate_limited) leaves verdict untouched                       | verdict=NEEDS_JUDGE, judge.status=unavai | verdict=NEEDS_JUDGE, judge.status=unavai | PASS
+layer_B: judge failure (provider_error) leaves verdict untouched                     | verdict=NEEDS_JUDGE, judge.status=unavai | verdict=NEEDS_JUDGE, judge.status=unavai | PASS
+layer_B: judge failure (invalid_json) leaves verdict untouched                       | verdict=NEEDS_JUDGE, judge.status=unavai | verdict=NEEDS_JUDGE, judge.status=unavai | PASS
+layer_B: adjudicate() with no client at all                                          | verdict=NEEDS_JUDGE, judge.status=unavai | verdict=NEEDS_JUDGE, judge.status=unavai | PASS
+layer_B: high-confidence judge disagreement escalates                                | FLAG_SUSPICIOUS                          | FLAG_SUSPICIOUS                          | PASS
+layer_B: escalation never produces AUTO_CONFIRM                                      | verdict != AUTO_CONFIRM                  | FLAG_SUSPICIOUS                          | PASS
+layer_B: LOW-confidence disagreement must not escalate                               | NEEDS_JUDGE (unchanged)                  | NEEDS_JUDGE                              | PASS
+sanity: check_dpo.py self-test still passes untouched                                | True                                     | True                                     | PASS
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+46/46 cases passed
+passed: True
+
+--- individual module self-tests (also run as part of Phase 4/5) ---
+=== src/dpo/judge_contract.py --self-test ===
+passed: True
+=== src/dpo/judge_client.py --self-test ===
+passed: True
+=== src/dpo/llm_judge.py --self-test ===
+passed: True
+=== src/dpo/judge_pipeline.py --self-test ===
+passed: True
+=== src/verification/check_facts.py --self-test (unmodified, still passing) ===
+passed: True
+=== src/verification/check_similarity.py --self-test (unmodified, still passing) ===
+  [skip] sentence-transformers not installed - live layer skipped
+passed: True
+=== src/verification/check_format.py --self-test (unmodified, still passing) ===
+passed: True
+=== src/verification/extract_facts.py --self-test (unmodified, still passing) ===
+passed: True
+=== src/verification/verify_sft.py --self-test (unmodified, still passing) ===
+passed: True
+=== src/verification/check_dpo.py --self-test (unmodified, still passing) ===
+passed: True
+
+--- Dashboard addendum (this delivery) ---
+New for the dashboard: src/dpo/dialect_markers.py (supporting-signal-only detector,
+never imported by judge_contract.py/judge_pipeline.py/llm_judge.py - verified by its
+own self-test) and src/dpo/generate_dashboard_data.py (runs the real judge code to
+produce final_llm_judge/dashboard_data.json).
+
+=== src/dpo/dialect_markers.py --self-test ===
+passed: True
+=== src/dpo/judge_contract.py --self-test (re-run, unchanged) ===
+passed: True
+=== src/dpo/judge_client.py --self-test (re-run, unchanged) ===
+passed: True
+=== src/dpo/llm_judge.py --self-test (re-run, unchanged) ===
+passed: True
+=== src/dpo/generate_dashboard_data.py ===
+wrote final_llm_judge/dashboard_data.json (9 rows)
+
+Note: src/dpo/judge_pipeline.py --self-test and src/dpo/test_llm_judge.py
+--self-test (layer B) could NOT be re-run in this sandbox, for the same
+pre-existing reason stated in README.md - check_dpo.py / verify_sft.py (Phase 1)
+are not included in this delivery bundle, so `import check_dpo` fails here. This
+is not a new regression; it is why generate_dashboard_data.py sources the Unified
+Verdict per rejection_type from EXPECTED_VERDICT (test_llm_judge.py) and this
+report's own earlier layer_B PASS rows, rather than re-deriving it.
+
+Dashboard functional test (this delivery, not a unit test file):
+- dashboard_data.json validated as well-formed JSON.
+- dashboard.html's embedded <script> extracted and syntax-checked with `node -c`
+  (no errors).
+- The extracted script was executed under Node against the real embedded JSON with
+  a minimal DOM stub (document.getElementById only) to confirm it runs end-to-end
+  without throwing: produced 9 case cards, correct AUTO_CONFIRM/NEEDS_JUDGE/
+  FLAG_SUSPICIOUS badges, rendered evidence quotes for all 6 NEEDS_JUDGE cases, and
+  rendered the dialect-marker chip only for the one case (wrong_register) where
+  dialect_markers.detect_dialect_markers() actually found a marker.
