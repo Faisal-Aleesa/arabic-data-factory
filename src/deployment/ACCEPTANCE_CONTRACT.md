@@ -126,6 +126,17 @@ Wire it only after real judge output has been scored against
 
 **سياسة مُبرمجة جزئيًا: الجدول مُنفّذ ومُختبر، لكنه غير موصول بمسار القبول بعد.**
 
+**Known limitation in the integrated judge (2026-09-05).** The DPO judge in `src/dpo/`
+is told the record's declared `rejection_type` before being asked whether it agrees
+(`rejection_type_declared` in the prompt payload). That is a leading question, so
+`rejection_type_agrees_with_record: true` means "not contradicted", NOT independent
+confirmation. It does not threaten the AUTO_CONFIRM floor - that is structural, since
+the judge's vocabulary has no such value and `_maybe_escalate()` cannot return one - but
+it does mean escalation may **under-detect genuine mislabels**, silently, because the
+judge has been primed toward agreement. Follow-up, not a blocker: withhold the declared
+type and compare in code, as `src/verification/judge_dpo.py` does. Full reasoning in
+`src/dpo/judge_contract.py`.
+
 One asymmetry the DPO side adds deliberately: `NEEDS_JUDGE` is `check_dpo.py`
 *delegating* the decision, so a judge PASS there CONFIRMS the pair. A rule-based
 `REVIEW` on the SFT side is *uncertainty*, and a judge PASS does not resolve it.
