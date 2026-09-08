@@ -1,0 +1,15 @@
+{
+  "source": "معجم الكلمات الشعبية في نجد",
+  "total_extracted_entries": 1278,
+  "high_confidence_accepted": 253,
+  "easy_review_total": 224,
+  "easy_review_auto_approved": 220,
+  "final_usable_entries": 473,
+  "duplicates_removed": 0,
+  "selection_policy": {
+    "direct_acceptance": "final_status == accepted",
+    "easy_review_auto_approval": "review_tier == easy_review and all flags are limited to low_headword_confidence or short_meaning",
+    "hard_review": "excluded",
+    "rejected": "excluded"
+  }
+}
