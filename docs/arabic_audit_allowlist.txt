@@ -22,3 +22,154 @@
 
 # Title of the classical work, recorded in docs/license_manifest.csv.
 أساس البلاغة
+
+
+# ---------------------------------------------------------------------------------
+# Task 2 reconstruction output, triaged 2026-09-08.
+#
+# WHY THESE ARE HERE, and why the threshold was NOT lowered instead.
+#
+# Task 2's generated SFT/DPO data (data/generated/**) is derived from `asas_albalagha`
+# ONLY - measured: 394/394 classical chunks, 0/337 dialect chunks - so the generating
+# model never saw the rights-pending dialect corpus and cannot have copied from it.
+#
+# But the generation prompt asks for SAUDI DIALECT phrasing over those classical
+# sources (`dialect: Saudi`, questions like "وش يعني"). So the output collides with the
+# everyday connectives of a Saudi dialect dictionary constantly and by design. Every
+# run below is a generic connective, a lexicographic formula, or a discourse marker.
+#
+# MEASURED at intake: 116 distinct HELD_ONLY runs, longest FOUR words
+# ("لها أكثر من معنى" = "it has more than one meaning", one occurrence in the dialect
+# corpus). Nothing at five words or more matched anywhere. A real leak of dictionary
+# content would show long runs; this shows the opposite shape.
+#
+# These are listed individually ON PURPOSE. Raising --min-words to 5 would have
+# silenced them in one line, and would ALSO have silenced any genuine five-word leak
+# in every future commit, in every file, forever. An allowlist entry suppresses
+# exactly one known-safe string and leaves the detector at full sensitivity for
+# everything else. That difference is the whole reason the allowlist exists.
+#
+# قائمة مُصفّاة يدويًا: عبارات عامة قصيرة، لا محتوى مصدريًا فيها.
+# ---------------------------------------------------------------------------------
+
+# 2-word runs (98).
+، أما
+، بينما
+، فهنا
+، لأن
+، وهي
+أرنبة الأنف
+أشرقت الشمس
+أصل كلمة
+أو لا
+أول الشباب
+أي أذله
+إذا قلنا
+إيش يعني
+البحر يكون
+البيت يقول
+الحديث يقول
+الحديدة المدببة
+الضمير في
+الطريق يكون
+العلاقة بين
+الفرق بين
+اللي هو
+المثل هذا
+بتشديد القاف
+بسبب وجود
+بشيء ما
+بنفس المعنى
+تجاوز الحد
+تجي من
+تختلف عن
+تخلى عن
+تستخدم كلمة
+تصغير لكلمة
+تعني الكثير
+تعني الموت
+تعود عليه
+جاي من
+ذكر النعام
+رحل البعير
+روث البقر
+سليط اللسان
+صفة للأرض
+صفة للشيء
+صوب المطر
+طاق واحد
+طرف العين
+على اسمها
+على مهلك
+عندما يقال
+فإذا قال
+فإذا قالوا
+في الحجاز
+في الخشب
+في اللغة،
+في النخلة
+في اليمن
+في جملة
+فيها طلب
+قبل شوي
+قعر البئر
+كأنك تقول
+كلام بطال
+كيف يعمل
+كيف يكون
+لا تستعجل
+لماذا يقال
+ماذا تعني
+مشتقة من
+من الشوائب
+من النص
+من زمان
+مين هي
+نبض العرق
+هذا التعبير
+هذا يعني
+هذه الكلمات
+هنا تعني
+هنا فعل
+هنا من
+هو تشبيه
+هي أمر
+هي عكس
+هي نداء
+وأصل الكلمة
+وسبب التسمية
+وش هي
+وش يسوي
+وهي تعني
+وهي زي
+وهي عكس
+يا سلام
+يبدو أن
+يستخدم في
+يستخدم كلمة
+يعني ركبه
+يعني هنا
+يقولون له
+يكون الرجل
+
+# 3-word runs (17).
+الكلمة مشتقة من
+بفتح القاف و
+تأتي في سياق
+شيء محدد و
+عند وصف شخص
+في الحديث الشريف
+في سياق الحديث
+في سياق الكلام
+في هذا السياق
+لها استخدامات مجازية
+ما أبالي به
+من كل نوع
+من هو الرجل
+نزل من الجبل
+هي مشتقة من
+وأصل الكلمة من
+يقولون عن المرأة
+
+# 4-word runs (1).
+لها أكثر من معنى

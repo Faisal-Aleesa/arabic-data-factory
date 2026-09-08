@@ -293,3 +293,13 @@ tests/fixtures/*saudi_dialect*
 # ABOUT the corpus, not verbatim source text, so it passes an audit built to find
 # quoted Arabic. One bracket pattern covers every spelling.
 docs/*[Hh][Aa][Nn][Dd][Oo][Ff][Ff]*.md
+
+# Adapter output: locked-schema records rebuilt from Task 2's generated files by
+# src/verification/adapt_task2.py. Regenerable in one command, so committing it would
+# only create a copy that can drift from its source. Classical-derived, so there is no
+# rights question here - this is a staleness rule, not a containment one.
+#
+# NOTE: if the adapter is ever run over DIALECT records, its output inherits the
+# rights-pending status of the corpus and this rule is then load-bearing for
+# containment as well.
+data/adapted/
