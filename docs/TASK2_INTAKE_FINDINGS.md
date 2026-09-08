@@ -116,6 +116,9 @@ Length is NOT the explanation: within these 139, mean words are chosen 18.7 vs r
 18.2. The two sides are the same size; they differ in whether they happened to contain a
 root-shaped token.
 
+**Post-fix (§8): 139 → 120.** The remaining 120 still rest on a fact axis whose extractor
+half is unfixed, so this is still not a defect count.
+
 **How many are genuinely inverted is currently unknown.** The 19 `FAIL_CONTRADICTED` vs
 `REVIEW` pairs are the least contaminated subset and the place to look first — but they
 rest on the same flags. Re-measure after the morphology fix before sending any number
@@ -149,6 +152,11 @@ tripping the same morphology bug.
 And the pairs are demonstrably not identical text. Lexical distinctness across the 2,803
 ties: median **0.370**, and **2,286 (82%) below 0.60** — substantially different wording.
 Only 2 sit at the degenerate floor. So the pairs differ; the checker cannot see how.
+
+**Post-fix (§8): 2,803 → 2,833 ties — it went UP.** With contradictions collapsing to
+REVIEW on both sides, more pairs land on identical verdicts. Enabling the similarity
+axis breaks only 5.3% of them, and 100% of the large-gap survivors are blocked by the
+ungrounded guard (§9).
 
 **This number says more about our checker than about Task 2's data.** It should not be
 sent as a defect count until the fact axis works on conversational text.
@@ -202,7 +210,12 @@ that the responses are empty or wrong.
 
 ---
 
-## 4. CAVEAT — `check_facts.py` has NOT been validated on conversational paraphrase
+## 4. CAVEAT — `check_facts.py` was NOT validated on conversational paraphrase
+
+> **STATUS 2026-09-08: diagnosed and FIXED. See §8 for the fix and its measured
+> effect, and §9 for what it did NOT fix.** This section is kept as written because
+> it is the diagnosis the fix rests on, and because the numbers in §2.1 and §2.3 were
+> produced before it.
 
 **Read this before quoting any fact-checking number from this document.**
 
@@ -560,11 +573,165 @@ again.
    conversational text (section 4). This blocks §2.1 and §2.3 as well as §4 — with
    similarity off, `check_dpo.direction` is a pure function of these verdicts, so the
    defect propagates undiluted into the DPO results.
-2. **Re-run with similarity enabled.** These numbers are fact-axis only
-   (`--no-similarity`); `sentence-transformers` is installed and the embedding axis has
-   not yet been run at this scale.
+2. **Assertion extraction for conversational text** in `extract_facts.py`. This is now the
+   BIGGER of the two gaps: it produces the 3,333 `NO_CHECKABLE_CLAIMS` and it keeps the
+   similarity guard shut on 2,092 pairs (§9). The morphology fix did not touch it.
+3. **Similarity has now been run** at this scale (§9). It breaks 5.3% of ties and its own
+   percentile distribution is saturated (median 98), so it is not a substitute for a
+   working fact axis.
 3. **The LLM judge has not been run at all** — it needs an endpoint, and it needs
    rejection types other than `partial_factual_errors` to be worth running.
+
+---
+
+## 8. The morphology fix — landed 2026-09-08
+
+### What was wrong
+
+`_relation()` classified any response value with characters welded onto a known fact as
+`corruption`, which is correct for a multi-word NAME and wrong for a root. **Every
+`entry_root` fact is a bare triliteral root — measured: 3,372 facts, all exactly 3
+characters, 3,351 distinct, mean 8.5 per chunk.** Responses cite the inflected surface
+form. `أثف` appears as `أثفية`, `مدد` as `مددت`, `جلح` as `الأجلح`. The generic rule read
+ordinary Arabic derivation as textual corruption.
+
+### The rule chosen, and why
+
+Three candidates were measured against all 1,510 flagged `entry_root` assertions:
+
+| rule | CONTRADICTED (n=715) | UNSUPPORTED (n=795) |
+|---|---:|---:|
+| **in-order subsequence** | **638 (89%)** | **253 (32%)** |
+| contiguous substring | 513 (72%) | 0 (0%) |
+| affix-strip then match | 429 (60%) | 0 (0%) |
+
+Substring and affix-strip score 0% on UNSUPPORTED by construction — that set is defined by
+containment having already failed. Only subsequence reaches it, and what it reaches are
+hollow and defective roots whose letters are separated by infixed vowels.
+
+**Specificity was measured, not assumed.** Tested against a RANDOM OTHER chunk's roots the
+rule fires on **10 of 1,510 (1%)**. Of the tokens it does match, 797 match exactly one
+root, 92 match two, 2 match three. It discriminates; it is not a rubber stamp. A
+regression pin in `check_facts.run_self_test()` holds that property.
+
+### The verdict is PARTIAL, not SUPPORTED
+
+Deliberate. Naming a root the chunk covers is **not** the same as asserting the source's
+claim about it — the response can still say something false. `PARTIAL` means "a human
+should look", which is exactly the epistemic state. Marking these `SUPPORTED` would have
+converted a false negative into a false positive.
+
+### Measured effect
+
+| record verdict | before | after |
+|---|---:|---:|
+| CONTRADICTED | 591 | **6** |
+| UNSUPPORTED | 530 | 410 |
+| PARTIAL | 147 | **852** |
+| SUPPORTED | 44 | 44 |
+| NO_CHECKABLE_CLAIMS | 3,333 | **3,333 (unchanged)** |
+
+**980 assertions reclassified** — 709 from CONTRADICTED, 271 from UNSUPPORTED.
+
+### Manual validation — 17 of 18
+
+A fixed-seed random sample of the reclassifications was read individually. Clean
+derivations included `ننقّب`←`نقب` (form II), `اخترص`←`خرص` (form VIII), `جمال`←`جمل`,
+`معيشة`←`عيش`, `الجلحاء`←`جلح`, `شأفتهم`←`شأف`.
+
+**One false positive: `أحمزها` matched root `حمأ`.** `أحمز` derives from `حمز`, not `حمأ`.
+The match only succeeds because `norm_key` folds alef variants, so `حمأ` becomes `حما` and
+the trailing `ها` supplies the final `ا`. **60 of 980 reclassifications (6%) depend on
+that folding** and carry the same risk.
+
+Left as-is rather than special-cased, because the destination is `PARTIAL` — a review
+queue, not acceptance — and diverging from `norm_key`'s project-wide folding for one fact
+type would cost more than it saves. Recorded here so the 6% is known rather than
+discovered.
+
+---
+
+## 9. Why the ties do not break — the exact mechanism
+
+This is the result most worth carrying forward, and it survived the fix.
+
+### Similarity was run, and it does not rescue the ties
+
+`check_dpo` was re-run over the same 3,000 pairs with the embedding axis ON:
+
+| | fact axis only | with similarity |
+|---|---:|---:|
+| ties | 2,803 | 2,654 |
+
+Paired per record: **149 of 2,803 ties broken (5.3%)**. And the breaks are weak evidence —
+**88 favour chosen against 61 favouring rejected** (59%, z = 2.21, barely past chance), and
+**40% of them sit at a percentile gap of 5–10**, i.e. just past the 5.0 tie margin.
+
+### The mechanical reason
+
+**724 still-tied pairs have a percentile gap of ≥10**, well past the tie margin. They
+should have broken. They did not, and the cause is exact:
+
+> **724 of 724 (100%) are ungrounded-versus-ungrounded.**
+> `check_similarity.compare_percentiles()` returns `INCOMPARABLE_UNGROUNDED` and refuses
+> to compare them.
+
+That guard is correct and must not be relaxed — it exists because comparing two ungrounded
+responses on similarity is comparing noise to noise, which previously flipped a verdict
+between corpora on identical logic. Across all 3,000 pairs, 875 have a gap ≥10 and only
+151 resolve to a direction.
+
+The axis is also **saturated**: percentiles across all 6,000 responses run p10 = 51,
+median = **98**, p90 = 100. Short answers about a chunk they genuinely derive from all look
+alike. There is little spread left to discriminate with.
+
+### The trap: groundedness is itself a fact-axis verdict
+
+The guard keys on `is_grounded()`, which is `verdict != NO_FACT_COVERAGE`. So the fact axis
+does not merely feed `direction` — **it also decides whether the independent axis is
+allowed to speak at all.** A defect in fact checking silently disables the fallback that
+would have compensated for it.
+
+### The morphology fix did NOT un-suppress it — measured
+
+| | before fix | after fix |
+|---|---:|---:|
+| pairs with both sides ungrounded | 2,092 (70%) | **2,092 (70%)** |
+| un-suppressed | — | **0** |
+
+**Zero.** The prediction that the fix would open the similarity axis was wrong, and the
+reason is structural: `NO_FACT_COVERAGE` means the EXTRACTOR found no assertions at all.
+The fix changes how existing assertions are *judged*; it cannot create assertions where
+none were extracted. Chosen-side and rejected-side `NO_FACT_COVERAGE` counts are byte-for-
+byte identical before and after (2,137 and 2,212).
+
+**Two independent defects, and only one is fixed:**
+
+| defect | module | status |
+|---|---|---|
+| assertions mis-judged (morphology) | `check_facts._relation()` | **FIXED** (§8) |
+| no assertions found in conversational paraphrase | `extract_facts.py` | **OPEN** |
+
+The extractor gap is what blocks the similarity guard AND what produces the 3,333
+`NO_CHECKABLE_CLAIMS`. It is the larger of the two and is untouched.
+
+### Post-fix DPO numbers (fact axis)
+
+| | before fix | after fix |
+|---|---:|---:|
+| FLAG_SUSPICIOUS | 2,942 | 2,953 |
+| NEEDS_JUDGE | 28 | 45 |
+| AUTO_CONFIRM | 30 | **2** |
+| ties | 2,803 | 2,833 |
+| `rejected_better_verdict` | 139 | 120 |
+
+Ties rose and inversions fell for the same reason: with contradictions collapsing to
+REVIEW on both sides, more pairs land on identical verdicts. **AUTO_CONFIRM falling 30 → 2
+is correct, not a regression** — those confirmations rested on `FAIL_CONTRADICTED` on the
+rejected side, which the fix showed to be morphological false positives.
+
+
+---
 
 ## Reproducing these numbers
 

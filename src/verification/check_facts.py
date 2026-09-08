@@ -246,6 +246,45 @@ def _token_run(big, small):
     return -1
 
 
+# A bare root. Measured: every entry_root fact in the classical corpus is exactly 3
+# characters. The range is 2-4 so a quadriliteral root in a future corpus is handled, but
+# anything longer is a phrase and must not be treated as a root.
+ROOT_MIN_LEN, ROOT_MAX_LEN = 2, 4
+
+
+def _is_bare_root(k):
+    return k and ' ' not in k and ROOT_MIN_LEN <= len(k) <= ROOT_MAX_LEN
+
+
+def _subsequence(root, word):
+    """True if `root`'s characters occur IN ORDER inside `word`, not necessarily adjacent.
+
+    Handles derivation the substring test cannot: أثف inside أثفية is contiguous, but a
+    hollow root's letters are separated by an infixed vowel and only this test finds them.
+    """
+    i = 0
+    for ch in word:
+        if i < len(root) and ch == root[i]:
+            i += 1
+    return i == len(root)
+
+
+def _root_subsequence_hit(resp_key, known, known_keys):
+    """The first chunk root the response inflects, or None.
+
+    Returns the ORIGINAL root string (not the normalised key) so the reason line names
+    what a reviewer would search the chunk for.
+    """
+    toks = [t for t in resp_key.split() if t]
+    for orig, k in zip(known, known_keys):
+        if not _is_bare_root(k):
+            continue
+        for t in toks:
+            if len(t) >= len(k) and _subsequence(k, t):
+                return orig
+    return None
+
+
 def _relation(resp_key, known_key):
     """Classify how a response value relates to a known fact value.
 
@@ -284,6 +323,49 @@ def _judge(assertion, by_type, region_ctx, chunk_tokens=None):
     for orig, k in zip(known, known_keys):
         if k == key:
             return SUPPORTED, 'exact match: %s' % orig
+
+    # ------------------------------------------------ entry_root: morphology, not corruption
+    #
+    # MEASURED on 4,645 real reconstructed responses (2026-09-08): of the entry_root
+    # assertions this function flagged, 87% of CONTRADICTED and 78% of UNSUPPORTED were
+    # strings that appear VERBATIM in their own source chunk. That is not what a
+    # contradiction looks like.
+    #
+    # The cause is a type mismatch, not a bug in the logic below. Every entry_root fact is
+    # a BARE TRILITERAL ROOT - measured: 3,372 facts, all exactly 3 characters. Responses
+    # cite the inflected surface form: root أثف appears as أثفية, مدد as مددت, جلح as
+    # الأجلح. The generic analysis then sees characters welded onto a known value and
+    # returns 'corruption', which is the right reading for a multi-word NAME ('جابر بن حني'
+    # with extra letters is suspicious) and the wrong reading for a root, where added
+    # letters are ordinary Arabic derivation.
+    #
+    # الجذر يُصرَّف، فالحروف الزائدة اشتقاق لا تحريف.
+    #
+    # So entry_root gets its own rule, applied BEFORE the generic analysis because the
+    # generic analysis is what produces the false positive. A chunk root whose letters
+    # appear IN ORDER within a response token means the response is discussing a root the
+    # chunk actually covers.
+    #
+    # PARTIAL, not SUPPORTED, and the distinction is deliberate: naming a root the chunk
+    # covers is not the same as asserting the source's claim ABOUT that root. The response
+    # may still say something false about it. PARTIAL means "a human should look", which is
+    # exactly the epistemic state here.
+    #
+    # Subsequence rather than substring: substring recovers 72% of the flagged
+    # CONTRADICTED but 0% of the UNSUPPORTED, because UNSUPPORTED is by construction the
+    # set where containment already failed. Those are hollow and defective roots whose
+    # letters are separated by infixed vowels. Subsequence reaches 89% and 32%.
+    #
+    # Specificity is measured, not assumed: against a RANDOM OTHER chunk's roots the rule
+    # fires on 1% of the same tokens (10/1510). run_self_test() pins that.
+    if a_type == 'entry_root':
+        hit = _root_subsequence_hit(key, known, known_keys)
+        if hit is not None:
+            return (PARTIAL,
+                    'response cites an inflected form of the chunk root %r; naming a root '
+                    'the chunk covers is not an assertion about it - needs a human' % hit)
+        # No chunk root matches at all. That IS the suspicious case, so fall through to
+        # the generic analysis and let it return UNSUPPORTED/CONTRADICTED as before.
 
     # Directional analysis, strongest signal first: a corruption anywhere outranks an
     # abbreviation elsewhere, because the corrupted claim is the one that is wrong.
@@ -474,6 +556,62 @@ def run_self_test():
     if check_response('نص', 'nope', idx, 'saudi_dialect')['verdict'] != 'UNKNOWN_CHUNK':
         print('  [FAIL] unknown chunk_id not reported')
         ok = False
+
+    # ---------------------------------------------- entry_root morphology (invented roots)
+    #
+    # All Arabic below is INVENTED. No source passage is hardcoded in a self-test - the
+    # licence audit found ten real dialect passages that had migrated into this stack's
+    # docstrings during debugging, and a test fixture is exactly where that happens.
+    if not _is_bare_root('ططط'):
+        print('  [FAIL] a 3-letter token is not recognised as a bare root'); ok = False
+    for bad in ('ططط ططط', 'طططططط', '', 'ط'):
+        if _is_bare_root(bad):
+            print('  [FAIL] %r accepted as a bare root' % bad); ok = False
+
+    # derivation: the root's letters appear in order inside the inflected form
+    for root, word, want in (('ططط', 'ططط', True),        # bare
+                             ('ططط', 'المططط', True),      # prefixed
+                             ('ططط', 'ططظة', False),       # only two of the three letters
+                             ('ططط', 'طاطاط', True),       # infixed (hollow-root shape)
+                             ('ططط', 'طط', False),         # too short to contain it
+                             ('ططط', 'طظطظط', True)):      # separated but in order
+        if _subsequence(root, word) != want:
+            print('  [FAIL] _subsequence(%r, %r) != %s' % (root, word, want)); ok = False
+
+    # order matters - the same letters reversed must NOT match
+    if _subsequence('طظع', 'عظط'):
+        print('  [FAIL] subsequence matched letters in the wrong order'); ok = False
+
+    known = ['ططط', 'ظظظ']
+    kk = [norm_key(v) for v in known]
+    if _root_subsequence_hit('المططط', known, kk) != 'ططط':
+        print('  [FAIL] inflected form did not resolve to its root'); ok = False
+    if _root_subsequence_hit('عععع', known, kk) is not None:
+        print('  [FAIL] unrelated token matched a root'); ok = False
+    # a multi-word known value is a phrase, not a root, and must never match this way
+    if _root_subsequence_hit('ططط', ['ططط ظظظ'], [norm_key('ططط ظظظ')]) is not None:
+        print('  [FAIL] a multi-word known value was treated as a root'); ok = False
+
+    # SPECIFICITY REGRESSION PIN.
+    # MEASURED on the real 2026-09-08 intake: the same response tokens tested against a
+    # RANDOM OTHER chunk's roots fired on 10 of 1510 (1%). The rule is discriminative, and
+    # that is the property most at risk if someone later loosens it - e.g. to letter-set
+    # overlap, or by dropping the in-order requirement. This pins the shape of that
+    # measurement on invented data: unrelated roots must not match unrelated tokens.
+    alien_roots = ['ظظظ', 'عععا', 'غغغ', 'فففا', 'قققا']
+    alien_keys = [norm_key(v) for v in alien_roots]
+    tokens = ['المططط', 'مططط', 'تططط', 'ططططة', 'ططاط']
+    hits = sum(1 for t in tokens
+               if _root_subsequence_hit(t, alien_roots, alien_keys) is not None)
+    if hits:
+        print('  [FAIL] specificity: %d of %d unrelated tokens matched an alien root; '
+              'the in-order requirement has been weakened' % (hits, len(tokens)))
+        ok = False
+    # ...and the matching root must still be found when it IS present
+    if _root_subsequence_hit('المططط', alien_roots + ['ططط'],
+                             alien_keys + [norm_key('ططط')]) != 'ططط':
+        print('  [FAIL] specificity pin suppressed a genuine root match'); ok = False
+
     print('passed: %s' % ok)
     return ok
 
