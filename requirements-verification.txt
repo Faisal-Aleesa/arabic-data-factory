@@ -1,0 +1,21 @@
+# Verification-stage dependencies (Task 3). NOT required for the data-engineering
+# pipeline, which stays dependency-light and model-free - install these only if you are
+# running src/verification/check_similarity.py.
+#
+#     python -m pip install -r requirements-verification.txt
+#
+# This pulls torch (~600 MB installed). check_facts.py, extract_facts.py and
+# audit_staged_arabic.py need none of it and run on the standard library plus numpy.
+
+sentence-transformers>=3.0   # embedding backend for check_similarity.py
+torch>=2.0                   # sentence-transformers runtime (CPU wheel is sufficient)
+numpy>=1.24                  # cosine / percentile arithmetic
+
+# --- Task 3, Group B: the LLM judge stack ---
+# judge_client.py / judge_sft.py / judge_dpo.py / judge_suite.py add NO dependency.
+# They run on the standard library, and their self-tests run offline against a scripted
+# backend, so `python src/verification/judge_sft.py --self-test` works on a fresh clone.
+#
+# The judging model is a Qwen instance whose endpoint is still pending. When that adapter
+# is written it goes in judge_client.py behind the existing JudgeBackend interface, and
+# ITS client library gets pinned here - nothing else in the stack should need to change.

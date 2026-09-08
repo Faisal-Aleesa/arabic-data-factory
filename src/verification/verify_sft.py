@@ -1,0 +1,877 @@
+# -*- coding: utf-8 -*-
+"""Task 3 - Combined SFT verifier.
+
+Composes the three checks already built into one consolidated verdict:
+
+    extract_facts.py    ground-truth fact tables (built offline, read here)
+    check_facts.py      fact-level contradiction / support
+    check_similarity.py semantic grounding against the source chunk
+
+Input : an SFT record - instruction, response, source_chunk_id, source_region,
+        format_type, model_version
+Output: a verdict object carrying BOTH component signals and a suggested verdict
+
+Combination logic, and why it is not an average
+-----------------------------------------------
+The two signals catch different failures and are not commensurable, so averaging them
+would let a high similarity score dilute a hard factual error. The rules are asymmetric
+on purpose:
+
+  CONTRADICTED on a PRECISE fact -> FAIL_CONTRADICTED, at any similarity. A wrong year
+  is wrong however fluent and however well-grounded the surrounding prose reads.
+  Similarity is recorded but cannot rescue it. This is the single most important rule
+  here: the dangerous response is the one that looks grounded and is not. Verified
+  directly - two composite probes with identical prose and identical similarity
+  (pct 98.3) split PASS / FAIL_CONTRADICTED on one changed digit.
+
+  CONTRADICTED on region_claim ALONE -> REVIEW/fail, not a hard failure. Region claims
+  are matched against cross_dialect_reference facts, whose extraction recall is poor: a
+  probe naming two regions the chunk genuinely discusses was hard-failed because the
+  extractor had recorded those references only as truncated fragments. A hard reject
+  should rest on precise evidence, not on a heuristic built over a lossy field.
+
+  SUPPORTED + high similarity -> PASS. Both signals agree.
+
+  UNSUPPORTED / PARTIAL, or the two signals disagreeing -> REVIEW, never a hard reject.
+  Both underlying tools already treat their own uncertainty this way - check_facts.py
+  routes its low-confidence tail to a review CSV, check_similarity.py documents that a
+  low score is evidence of drift rather than proof - and it would be incoherent for the
+  wrapper to be more decisive than the evidence it is built on. REVIEW carries a
+  `leaning` field so a human queue can be ordered.
+
+  No extractable facts -> NO_FACT_COVERAGE, which is deliberately NOT a pass or a fail.
+  check_facts.py had nothing to check, so the fact axis is silent, not satisfied. Folding
+  that into PASS would launder a coverage gap into an endorsement; folding it into FAIL
+  would punish a response for the extractor's recall. It is reported as its own outcome
+  with the similarity score attached.
+
+Thresholds are parameters, not constants
+----------------------------------------
+No pass/fail cutoff is baked into the logic. The similarity bands live in
+SimilarityBands, default to provisional values derived from 12 hand-written probes, are
+overridable per call and on the command line, and are echoed into every verdict
+(`bands_used`) so no score can be read without the boundaries that classified it.
+They are a starting point for discussion, not a calibrated threshold - see
+check_similarity.py's caveats, especially that a correct paraphrase with no shared
+wording scored pct 96 on one corpus and pct 20 on the other.
+
+Built for DPO reuse
+-------------------
+`verify_response()` is the unit of work and knows nothing about SFT records: it takes a
+response string plus a chunk id and returns a verdict. `verify_sft_record()` is a thin
+adapter that validates the SFT schema and delegates. `compare_responses()` runs the same
+per-response function over two candidates and reports which is better and why, which is
+what the DPO stage needs for chosen-vs-rejected. Building the pipeline around a
+per-response function rather than SFT plumbing is the whole reason DPO will not need a
+rewrite.
+
+A VerificationContext holds the facts index, the chunk texts, the embedder and a
+fixed-seed baseline sample. It is built once and reused across every candidate, which
+matters because the baseline embedding is the expensive part.
+
+What this CANNOT do yet
+-----------------------
+- FORMAT is checked, but does NOT affect the verdict. THE GATE LIVES AT ACCEPTANCE:
+  acceptance_decision() below consults format and the verdict together, and is the only
+  supported way to turn a result into an accept/reject for the released dataset. Anything
+  reading `verdict` alone can let a grounded-but-malformed record through. See
+  src/deployment/ACCEPTANCE_CONTRACT.md, which is written for whoever builds that stage.
+  On the verdict itself: check_format.py tests structural
+  conformance and the result is reported as `format_status` / `format_conforms` /
+  `format_validated`. It is deliberately NOT folded into the PASS/REVIEW/FAIL decision:
+  the verdict answers "is this grounded in the source", and a well-grounded response in
+  the wrong shape is a different defect from a fluent invention. A caller that wants
+  format to gate acceptance should read the field and decide - check_dpo.py does exactly
+  that for its `wrong_formatting` pairs.
+  `format_validated` is True only when a check actually ran and returned a definite
+  answer; an unrecognised format_type or an empty response leaves it False, because the
+  absence of a check must never read as a clean result.
+  MEASURED: both corpora are 100% `dictionary_entry`, so that is the only format value
+  validated against real corpus content; the rest rest on synthetic cases.
+- It inherits every limitation of the tools it wraps:
+  * extraction recall - a fact extract_facts.py missed is not in the table, so a response
+    asserting it reads as UNSUPPORTED. UNSUPPORTED counts must be read against
+    docs/citation_review_*.csv, not as a hallucination rate.
+  * drift and hallucination are not separable by similarity; both read as ungrounded.
+  * this module passes chunk_text into check_facts, which enables its stricter reading
+    of extensions: a token added to a known fact that does not occur in the source is
+    an unsupported addition, not a fuller form. check_facts run standalone, without
+    chunk_text, keeps such a case at PARTIAL.
+  * on the dialect corpus similarity partly tracks lexical overlap, so a correct
+    reworded paraphrase can score like a hallucination.
+- Similarity requires torch (requirements-verification.txt). Without it the module still
+  runs, but every verdict is marked `similarity_available: false` and no PASS is issued -
+  a single-signal result is reported as REVIEW rather than quietly presented as a pass.
+"""
+
+import argparse
+import json
+import os
+import random
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import check_facts as cf                                        # noqa: E402
+import check_similarity as csim                                 # noqa: E402
+import check_format as cfmt                                     # noqa: E402
+
+CHUNKS = csim.CHUNKS
+FACTS = cf.FACTS
+
+# Verdicts
+PASS = 'PASS'
+FAIL_CONTRADICTED = 'FAIL_CONTRADICTED'
+REVIEW = 'REVIEW'
+NO_FACT_COVERAGE = 'NO_FACT_COVERAGE'
+INVALID_RECORD = 'INVALID_RECORD'
+
+SFT_FIELDS = ('instruction', 'response', 'source_chunk_id', 'source_region',
+              'format_type', 'model_version')
+
+
+class SimilarityBands(object):
+    """Provisional percentile bands. NOT calibrated - see the module docstring.
+
+    Derived from 12 hand-written probes: grounded landed at pct 99-100 on both corpora,
+    hallucinated at 1-40, with drift and ambiguous scattered between. The middle band is
+    deliberately wide and routes to REVIEW. Widening it is the safe direction to adjust;
+    narrowing it manufactures confidence the data does not support.
+
+    `high` was 90 and is now 95, on evidence. A composite probe with the correct year but
+    entirely wrong subject matter (falconry against a chunk about speech verbs) scored
+    pct 90.8 and passed - a false PASS. The same text WITHOUT the year clause scored 31.9,
+    so one short formulaic sentence moved it nearly 60 points: this measure is sensitive
+    to shared boilerplate, and a boundary at 90 sat inside that noise. 95 excludes the
+    observed false pass while leaving every genuinely grounded probe (98.3-100) above it.
+    That is one data point, not a calibration - it is still a parameter, and real
+    reconstructed output should decide it.
+    """
+
+    def __init__(self, high=95.0, low=50.0):
+        if not 0 <= low <= high <= 100:
+            raise ValueError('bands must satisfy 0 <= low <= high <= 100')
+        self.high, self.low = float(high), float(low)
+
+    def band(self, pct):
+        if pct is None:
+            return 'unavailable'
+        if pct >= self.high:
+            return 'high'
+        if pct < self.low:
+            return 'low'
+        return 'middle'
+
+    def as_dict(self):
+        return {'high': self.high, 'low': self.low}
+
+
+class VerificationContext(object):
+    """Everything the per-response check needs, built once and reused.
+
+    Holds the fact table, the chunk texts, the embedder and a fixed-seed baseline sample
+    of chunks used to turn a raw cosine into a percentile. The baseline is the expensive
+    part - embedding it once and reusing it is what makes per-candidate checks cheap, and
+    it is what lets DPO score two candidates against an identical reference.
+    """
+
+    def __init__(self, corpus, facts_path=None, chunks_path=None, embedder=None,
+                 baseline_n=120, bands=None, seed=0):
+        self.corpus = corpus
+        self.facts = cf.load_index(facts_path or FACTS[corpus])
+        self.chunks = csim.load_chunks(chunks_path or CHUNKS[corpus])
+        self.bands = bands or SimilarityBands()
+        self.embedder = embedder
+        self.index = csim.WindowIndex(embedder) if embedder is not None else None
+        rng = random.Random(seed)
+        ids = sorted(self.chunks)
+        self.baseline_ids = rng.sample(ids, min(baseline_n, len(ids)))
+
+    @property
+    def similarity_available(self):
+        return self.index is not None
+
+    def similarity(self, response, chunk_id):
+        """Raw cosine plus percentile/margin against the fixed baseline."""
+        if not self.similarity_available:
+            return None
+        rec = self.chunks.get(chunk_id)
+        if rec is None:
+            return None
+        own = self.index.score(response, chunk_id, rec['chunk_text'])
+        base = [self.index.score(response, b, self.chunks[b]['chunk_text'])['max']
+                for b in self.baseline_ids if b != chunk_id]
+        base_sorted = sorted(base)
+        n = len(base_sorted)
+        median = base_sorted[n // 2] if n else float('nan')
+        pct = 100.0 * sum(1 for x in base_sorted if x < own['max']) / n if n else None
+        return {'max': own['max'], 'mean': own['mean'], 'n_windows': own['n_windows'],
+                'baseline_n': n, 'baseline_median': median,
+                'margin': own['max'] - median if n else None,
+                'percentile': pct}
+
+
+# ------------------------------------------------------------------ the core decision
+
+# Fact types whose contradiction is PRECISE evidence. A year, a page number or a lemma
+# either matches the source or does not.
+#
+# `region_claim` is deliberately excluded. It is a heuristic built on
+# cross_dialect_reference facts, and that extraction has poor recall: a chunk discussing
+# other regions may record them only as truncated fragments. Testing hit exactly this -
+# a correct response naming two regions the chunk genuinely discusses was hard-failed,
+# because the extractor had stored those references truncated. Escalating an extraction
+# recall gap into the most severe verdict is the wrong trade, so a region-only
+# contradiction routes to REVIEW instead, with the cause named.
+PRECISE_CONTRADICTION_TYPES = {
+    'hijri_year', 'gregorian_year', 'year_unmarked_era', 'page_reference',
+    'entry_headword', 'entry_root', 'citation_authority',
+}
+
+
+def combine(fact_verdict, sim_band, similarity_available, contradicted_types=()):
+    """Pure decision function: two signals in, (verdict, leaning, reason) out.
+
+    Kept free of IO and of the embedder so the whole matrix can be self-tested without a
+    model, and so the rule can be read in one place rather than inferred from control
+    flow scattered through the caller.
+    """
+    if fact_verdict == 'UNKNOWN_CHUNK':
+        return INVALID_RECORD, None, 'source_chunk_id not present in the fact table'
+
+    # Rule 1: a contradicted fact is a failure at any similarity - but only when the
+    # contradiction rests on a precise fact type. See PRECISE_CONTRADICTION_TYPES.
+    if fact_verdict == cf.CONTRADICTED:
+        types = set(contradicted_types or ())
+        precise = types & PRECISE_CONTRADICTION_TYPES
+        if precise or not types:
+            return (FAIL_CONTRADICTED, 'fail',
+                    'a response fact conflicts with the source (%s); similarity cannot '
+                    'rescue this' % (', '.join(sorted(precise)) if precise else 'unspecified'))
+        return (REVIEW, 'fail',
+                'only heuristic contradiction(s) (%s), which depend on cross-reference '
+                'extraction recall - flagged rather than hard-failed'
+                % ', '.join(sorted(types)))
+
+    if fact_verdict == 'NO_CHECKABLE_CLAIMS':
+        if not similarity_available:
+            return (NO_FACT_COVERAGE, None,
+                    'no checkable facts and no similarity signal: nothing was verified')
+        lean = {'high': 'pass', 'low': 'fail'}.get(sim_band)
+        return (NO_FACT_COVERAGE, lean,
+                'no extractable facts to check; similarity band=%s. The fact axis is '
+                'silent, not satisfied.' % sim_band)
+
+    if not similarity_available:
+        # One signal only. Never a PASS - that would present a half-check as a full one.
+        return (REVIEW, 'pass' if fact_verdict == cf.SUPPORTED else 'fail',
+                'similarity unavailable (torch not installed); fact check alone says %s'
+                % fact_verdict)
+
+    if fact_verdict == cf.SUPPORTED:
+        if sim_band == 'high':
+            return PASS, None, 'facts supported and similarity in the high band'
+        if sim_band == 'low':
+            return (REVIEW, 'fail',
+                    'signals disagree: facts supported but similarity in the low band - '
+                    'possible correct-facts-wrong-substance drift, or a reworded '
+                    'paraphrase the measure cannot see')
+        return REVIEW, 'pass', 'facts supported, similarity mid-band'
+
+    # UNSUPPORTED / PARTIAL
+    if sim_band == 'low':
+        return (REVIEW, 'fail',
+                'facts %s and similarity in the low band - likely ungrounded, flagged '
+                'rather than rejected because both underlying checks treat this as '
+                'uncertain' % fact_verdict)
+    if sim_band == 'high':
+        return (REVIEW, 'pass',
+                'facts %s but similarity high - often a correct paraphrase the fact '
+                'matcher could not align' % fact_verdict)
+    return REVIEW, None, 'facts %s and similarity mid-band' % fact_verdict
+
+
+# --------------------------------------------------------------- per-response check
+
+def verify_response(response, source_chunk_id, ctx):
+    """Verify ONE response against ONE chunk. The DPO-reusable unit.
+
+    Deliberately knows nothing about SFT records: give it a string and a chunk id.
+    """
+    # Pass the chunk text so check_facts can tell a plausible fuller name from an
+    # unsupported addition: a token added to a known fact is only a legitimate extension
+    # if the source actually contains it.
+    chunk_rec = ctx.chunks.get(source_chunk_id)
+    facts = cf.check_response(response, source_chunk_id, ctx.facts, ctx.corpus,
+                              chunk_text=chunk_rec.get('chunk_text') if chunk_rec else None)
+    sim = ctx.similarity(response, source_chunk_id)
+    pct = sim['percentile'] if sim else None
+    band = ctx.bands.band(pct)
+    contradicted_types = [a['type'] for a in facts.get('assertions', [])
+                          if a.get('verdict') == cf.CONTRADICTED]
+    verdict, leaning, reason = combine(facts['verdict'], band,
+                                       ctx.similarity_available and sim is not None,
+                                       contradicted_types)
+    return {
+        'source_chunk_id': source_chunk_id,
+        'verdict': verdict,
+        'leaning': leaning,
+        'reason': reason,
+        'fact_verdict': facts['verdict'],
+        'fact_assertions': facts.get('assertions', []),
+        'similarity': sim,
+        'similarity_band': band,
+        'similarity_available': bool(ctx.similarity_available and sim is not None),
+        'bands_used': ctx.bands.as_dict(),
+    }
+
+
+def verify_sft_record(record, ctx):
+    """Validate the SFT schema, then delegate to verify_response."""
+    missing = [f for f in SFT_FIELDS if f not in record]
+    if missing:
+        return {'verdict': INVALID_RECORD, 'leaning': None,
+                'reason': 'missing required field(s): %s' % ', '.join(missing),
+                'source_chunk_id': record.get('source_chunk_id')}
+    out = verify_response(record['response'], record['source_chunk_id'], ctx)
+    out['model_version'] = record.get('model_version')
+    out['format_type'] = record.get('format_type')
+    # فحص مطابقة الشكل عبر check_format، مع تسجيل السبب لا النتيجة وحدها.
+    # Real format conformance, not a hardcoded false. `format_validated` is True only
+    # when a check actually ran and returned a definite answer - an unrecognised
+    # format_type or an empty response leaves it False, because absence of a check must
+    # never read as a clean result.
+    fmt = cfmt.check_format(record['response'], record.get('format_type'))
+    out['format_status'] = fmt['status']
+    out['format_reason'] = fmt.get('reason')
+    out['format_validated'] = fmt['status'] in (cfmt.MATCH, cfmt.MISMATCH)
+    out['format_conforms'] = (fmt['status'] == cfmt.MATCH) if out['format_validated']         else None
+
+    # Cheap record-level consistency check: the record's declared region must match the
+    # chunk it cites. A mismatch is a record construction error, not a model error, and
+    # would otherwise be invisible.
+    chunk = ctx.chunks.get(record['source_chunk_id'])
+    if chunk is not None and record.get('source_region') != chunk.get('region'):
+        out['record_warnings'] = [
+            'source_region %r does not match the chunk region %r'
+            % (record.get('source_region'), chunk.get('region'))]
+    return out
+
+
+# Verdict ordering for DPO preference. Facts dominate; similarity only breaks ties
+# between equal verdicts. Kept as a pure function so the ordering is testable without a
+# model, exactly as combine() is.
+VERDICT_RANK = {PASS: 0, NO_FACT_COVERAGE: 1, REVIEW: 2, FAIL_CONTRADICTED: 3,
+                INVALID_RECORD: 4}
+
+
+def is_grounded(result):
+    """Does this result have any fact grounding to anchor its similarity score?
+
+    This module owns the DEFINITION of grounded, because it is a fact-layer judgement.
+    check_similarity.py owns HOW percentiles are compared and refuses to rank two
+    ungrounded ones - it takes groundedness as a required argument precisely so the
+    question cannot be skipped by any caller.
+
+    هذا الموضع يعرّف معنى "مسند"، لأنه حكم يخص طبقة الوقائع، بينما تتولى وحدة التشابه
+    كيفية المقارنة وترفض المفاضلة بين نصين غير مسندين.
+    """
+    return result.get('verdict') != NO_FACT_COVERAGE
+
+
+def similarity_comparable(a, b):
+    """Is a similarity percentile difference between these two results meaningful?
+
+    No, when NEITHER side has any fact grounding. A percentile is a rank against a
+    baseline of wrong chunks; between two responses that are both NO_FACT_COVERAGE
+    there is nothing anchoring either of them to the source, so the ordering is noise
+    rather than evidence.
+
+    هل الفرق في نسبة التشابه بين النتيجتين ذو دلالة؟ لا، إذا لم يكن لأي منهما إسناد
+    إلى وقائع المصدر: النسبة رتبة مقابل عينة من المقاطع الخاطئة، وبين نصين غير مسندين
+    لا يوجد ما يثبتهما إلى المصدر، فالترتيب ضجيج لا دليل.
+
+    Found in the DPO layer, where two format probes flipped verdict BETWEEN corpora on
+    identical logic - AUTO_CONFIRM on one and FLAG_SUSPICIOUS on the other, and the
+    reverse for the second probe - every flip driven by a similarity ordering between
+    two ungrounded halves. Same rule, opposite outcomes, is what noise looks like. This
+    is the canonical implementation; check_dpo.py delegates here so the rule cannot be
+    fixed in one place and left broken in the other.
+    """
+    return is_grounded(a) or is_grounded(b)
+
+
+def rank_key(result, use_similarity=True):
+    """Ordering key: verdict first, similarity only as a tie-break.
+
+    مفتاح الترتيب: الحكم أولا، ثم التشابه لفض التعادل فقط.
+    """
+    if not use_similarity:
+        return (VERDICT_RANK.get(result.get('verdict'), 9), 0)
+    pct = (result.get('similarity') or {}).get('percentile')
+    return (VERDICT_RANK.get(result.get('verdict'), 9),
+            -(pct if pct is not None else -1))
+
+
+# ------------------------------------------------------------- acceptance decision
+#
+# قرار القبول: يوجب النظر في الإسناد والشكل معا، لا في الحكم وحده.
+#
+# THE ONLY SANCTIONED WAY to turn a verification result into accept/reject for the
+# released dataset. Whatever builds the release stage must call this rather than reading
+# `verdict` on its own.
+#
+# The verdict answers ONE question: is this response grounded in its source? It says
+# nothing about whether the response is shaped the way its format_type promises. A
+# grounded-but-malformed record has a PASS verdict, and accepting on the verdict alone
+# would let it through silently. That is the failure this function exists to prevent, so
+# format is not an optional extra input here - it is required, and its ABSENCE is a
+# refusal rather than a pass.
+
+ACCEPT = 'ACCEPT'
+REJECT = 'REJECT'
+HOLD_FOR_REVIEW = 'HOLD_FOR_REVIEW'
+
+# How much a format_conforms=False finding is worth depends on how well that format_type's
+# check is validated, and the two are not equal.
+#
+# قوة الحكم على مخالفة الشكل تتبع قوة التحقق من ذلك النوع، وهما غير متساويين.
+#
+# MEASURED: both corpora are 100% `dictionary_entry` (337 + 394 chunks), so that is the
+# only format_type whose check has been exercised against real corpus content. A mismatch
+# there is reliable evidence and hard-rejects. The other four are implemented against
+# chunk.py's own assignment rules and exercised only by synthetic cases; a mismatch on
+# those is weaker evidence, so it routes to review rather than discarding a record on a
+# check that has never met real data of its kind.
+#
+# When a corpus in one of those formats is ingested and the check is validated against it,
+# move that format_type into the hard-reject set and say so here.
+FORMAT_HARD_REJECT = frozenset(['dictionary_entry'])
+FORMAT_REVIEW_ONLY = frozenset(['prose', 'narrative_paragraph', 'verse',
+                                'footnote_block', 'list'])
+
+
+def acceptance_decision(result):
+    """Accept / reject / hold, from BOTH the grounding verdict and format conformance.
+
+    `result` must come from verify_sft_record(), not verify_response(): the per-response
+    function does not run a format check, and a result without format fields cannot be
+    decided. Passing one raises ValueError rather than defaulting to anything - a missing
+    check must never resolve to acceptance.
+
+    يجب أن تأتي النتيجة من verify_sft_record لا من verify_response، لأن الأخيرة لا تفحص
+    الشكل، وغياب الفحص لا يجوز أن يؤول إلى قبول.
+
+    Rules, strictest first:
+      INVALID_RECORD          -> REJECT   the record itself is unusable
+      FAIL_CONTRADICTED       -> REJECT   a precise fact conflicts with the source
+      format_validated False  -> HOLD     no definite format answer; absence != clean
+      format_conforms False   -> REJECT   for dictionary_entry, whose check is validated
+                                          against real corpus content
+                              -> HOLD     for the formats validated only on synthetic
+                                          cases - see FORMAT_HARD_REJECT
+      PASS + conforms         -> ACCEPT
+      anything else + conforms-> HOLD     REVIEW / NO_FACT_COVERAGE need a human or judge
+    """
+    if 'format_validated' not in result:
+        raise ValueError(
+            'acceptance_decision() needs a verify_sft_record() result carrying format '
+            'fields; a bare verify_response() verdict cannot be accepted because format '
+            'was never checked')
+
+    verdict = result.get('verdict')
+    if verdict == INVALID_RECORD:
+        return REJECT, 'the record is invalid: %s' % result.get('reason')
+    if verdict == FAIL_CONTRADICTED:
+        return REJECT, 'a precise fact conflicts with the source'
+    if not result.get('format_validated'):
+        return (HOLD_FOR_REVIEW,
+                'format could not be checked (%s) - an unchecked format is not a clean '
+                'one' % result.get('format_status'))
+    if result.get('format_conforms') is not True:
+        ftype = result.get('format_type')
+        if ftype in FORMAT_HARD_REJECT:
+            return (REJECT,
+                    'response does not conform to its declared format_type (%s), whose '
+                    'check is validated against real corpus content: %s'
+                    % (ftype, result.get('format_reason')))
+        return (HOLD_FOR_REVIEW,
+                'response does not conform to its declared format_type (%s), but that '
+                'check is validated only on synthetic cases - too weak to discard a '
+                'record on: %s' % (ftype, result.get('format_reason')))
+    if verdict == PASS:
+        return ACCEPT, 'grounded in the source and correctly formatted'
+    return (HOLD_FOR_REVIEW,
+            'format is correct but grounding is %s - needs a human or the judge'
+            % verdict)
+
+
+def compare_responses(response_a, response_b, source_chunk_id, ctx):
+    """DPO helper: score two candidates for the same chunk and rank them.
+
+    Uses the identical per-response function and the identical baseline, so the two are
+    genuinely comparable. Ordering is by verdict severity first, then by similarity
+    percentile - facts dominate, similarity breaks ties.
+    """
+    a = verify_response(response_a, source_chunk_id, ctx)
+    b = verify_response(response_b, source_chunk_id, ctx)
+    # لا يُفض التعادل بالتشابه إذا كان الطرفان غير مسندين إلى وقائع المصدر.
+    comparable = similarity_comparable(a, b)
+    ra = VERDICT_RANK.get(a.get('verdict'), 9)
+    rb = VERDICT_RANK.get(b.get('verdict'), 9)
+    if ra < rb:
+        preferred, why = 'a', 'candidate a has the stronger verdict'
+    elif rb < ra:
+        preferred, why = 'b', 'candidate b has the stronger verdict'
+    else:
+        # فض التعادل عبر الواجهة المحروسة، لا بمقارنة النسب مباشرة.
+        # Tie-break through check_similarity's guarded API rather than comparing
+        # percentiles by hand - that is what makes the ungrounded case impossible to
+        # get wrong at this call site.
+        rel = csim.compare_percentiles(
+            (a.get('similarity') or {}).get('percentile'),
+            (b.get('similarity') or {}).get('percentile'),
+            is_grounded(a), is_grounded(b))
+        if rel == csim.A_BETTER:
+            preferred, why = 'a', 'verdicts tie; candidate a leads on similarity'
+        elif rel == csim.B_BETTER:
+            preferred, why = 'b', 'verdicts tie; candidate b leads on similarity'
+        elif rel == csim.INCOMPARABLE_UNGROUNDED:
+            preferred, why = None, ('verdicts tie and neither candidate has fact '
+                                    'grounding, so the similarity ordering carries no '
+                                    'information')
+        else:
+            preferred, why = None, 'candidates are indistinguishable on both signals'
+    return {'preferred': preferred, 'reason': why, 'a': a, 'b': b,
+            'similarity_comparable': comparable}
+
+
+# ------------------------------------------------------------------------- self-test
+#
+# The decision rule is tested directly, with no model and no corpus, so the full matrix
+# is exercised cheaply and deterministically. Arabic is not needed here at all - the
+# inputs are verdict labels.
+
+MATRIX = [
+    # (fact_verdict, sim_band, sim_available, expected verdict, expected leaning,
+    #  contradicted_types)
+    (cf.CONTRADICTED,        'high',        True,  FAIL_CONTRADICTED, 'fail'),
+    (cf.CONTRADICTED,        'low',         True,  FAIL_CONTRADICTED, 'fail'),
+    (cf.CONTRADICTED,        'middle',      True,  FAIL_CONTRADICTED, 'fail'),
+    (cf.CONTRADICTED,        'unavailable', False, FAIL_CONTRADICTED, 'fail'),
+    (cf.SUPPORTED,           'high',        True,  PASS,              None),
+    (cf.SUPPORTED,           'middle',      True,  REVIEW,            'pass'),
+    (cf.SUPPORTED,           'low',         True,  REVIEW,            'fail'),
+    (cf.UNSUPPORTED,         'low',         True,  REVIEW,            'fail'),
+    (cf.UNSUPPORTED,         'high',        True,  REVIEW,            'pass'),
+    (cf.UNSUPPORTED,         'middle',      True,  REVIEW,            None),
+    (cf.PARTIAL,             'low',         True,  REVIEW,            'fail'),
+    (cf.PARTIAL,             'high',        True,  REVIEW,            'pass'),
+    ('NO_CHECKABLE_CLAIMS',  'high',        True,  NO_FACT_COVERAGE,  'pass'),
+    ('NO_CHECKABLE_CLAIMS',  'low',         True,  NO_FACT_COVERAGE,  'fail'),
+    ('NO_CHECKABLE_CLAIMS',  'middle',      True,  NO_FACT_COVERAGE,  None),
+    ('NO_CHECKABLE_CLAIMS',  'unavailable', False, NO_FACT_COVERAGE,  None),
+    (cf.SUPPORTED,           'unavailable', False, REVIEW,            'pass'),
+    (cf.UNSUPPORTED,         'unavailable', False, REVIEW,            'fail'),
+    ('UNKNOWN_CHUNK',        'high',        True,  INVALID_RECORD,    None),
+]
+
+# Contradiction severity depends on the fact type that contradicted.
+CONTRADICTION_TYPE_MATRIX = [
+    # (contradicted_types, expected verdict)
+    (['hijri_year'],                  FAIL_CONTRADICTED),
+    (['page_reference'],              FAIL_CONTRADICTED),
+    (['citation_authority'],          FAIL_CONTRADICTED),
+    (['entry_headword'],              FAIL_CONTRADICTED),
+    (['region_claim'],                REVIEW),            # heuristic alone -> review
+    (['region_claim', 'hijri_year'],  FAIL_CONTRADICTED),  # any precise type -> fail
+    ([],                              FAIL_CONTRADICTED),  # unknown -> fail closed
+]
+
+
+def run_self_test():
+    ok = True
+    for fv, band, avail, want_v, want_lean in MATRIX:
+        got_v, got_lean, _ = combine(fv, band, avail)
+        if got_v != want_v or got_lean != want_lean:
+            print('  [FAIL] %-20s + %-11s avail=%-5s -> %s/%s, expected %s/%s'
+                  % (fv, band, avail, got_v, got_lean, want_v, want_lean))
+            ok = False
+
+    # A precise contradicted fact must fail at EVERY band - the rule that matters most.
+    for band in ('high', 'middle', 'low', 'unavailable'):
+        v = combine(cf.CONTRADICTED, band, band != 'unavailable', ['hijri_year'])[0]
+        if v != FAIL_CONTRADICTED:
+            print('  [FAIL] precise CONTRADICTED escaped failure at band=%s' % band)
+            ok = False
+
+    # Contradiction severity by fact type.
+    for types, want in CONTRADICTION_TYPE_MATRIX:
+        got = combine(cf.CONTRADICTED, 'high', True, types)[0]
+        if got != want:
+            print('  [FAIL] contradiction types %s -> %s, expected %s'
+                  % (types, got, want))
+            ok = False
+
+    # A region-only contradiction must never be a hard fail, at any band.
+    for band in ('high', 'middle', 'low'):
+        if combine(cf.CONTRADICTED, band, True, ['region_claim'])[0] == FAIL_CONTRADICTED:
+            print('  [FAIL] region-only contradiction hard-failed at band=%s' % band)
+            ok = False
+
+    # No-facts must never be reported as PASS or as a contradiction failure.
+    for band in ('high', 'middle', 'low'):
+        v = combine('NO_CHECKABLE_CLAIMS', band, True)[0]
+        if v in (PASS, FAIL_CONTRADICTED):
+            print('  [FAIL] NO_CHECKABLE_CLAIMS collapsed into %s at band=%s' % (v, band))
+            ok = False
+
+    # Without similarity, nothing may be issued as a PASS.
+    for fv in (cf.SUPPORTED, cf.PARTIAL, cf.UNSUPPORTED):
+        if combine(fv, 'unavailable', False)[0] == PASS:
+            print('  [FAIL] single-signal result issued as PASS for %s' % fv)
+            ok = False
+
+    # Bands
+    b = SimilarityBands(high=90, low=50)
+    for pct, want in ((100, 'high'), (90, 'high'), (89.9, 'middle'), (50, 'middle'),
+                      (49.9, 'low'), (0, 'low'), (None, 'unavailable')):
+        if b.band(pct) != want:
+            print('  [FAIL] band(%s) = %s, expected %s' % (pct, b.band(pct), want))
+            ok = False
+    try:
+        SimilarityBands(high=10, low=90)
+        print('  [FAIL] inverted bands were accepted')
+        ok = False
+    except ValueError:
+        pass
+
+    # DPO preference ordering
+    def R(v, pct=None):
+        return {'verdict': v, 'similarity': ({'percentile': pct} if pct is not None else None)}
+    order_cases = [
+        (R(PASS, 98), R(FAIL_CONTRADICTED, 98), 'a', 'facts dominate at equal similarity'),
+        (R(PASS, 50), R(REVIEW, 100), 'a', 'a better verdict beats a better score'),
+        (R(NO_FACT_COVERAGE, 100), R(NO_FACT_COVERAGE, 32), 'a',
+         'similarity breaks a tie between equal verdicts'),
+        (R(REVIEW, 70), R(REVIEW, 70), None, 'identical results must tie'),
+        (R(FAIL_CONTRADICTED, 99), R(INVALID_RECORD, 99), 'a',
+         'a bad response still ranks above an unusable record'),
+    ]
+    for ra, rb, want, note in order_cases:
+        ka, kb = rank_key(ra), rank_key(rb)
+        got = 'a' if ka < kb else ('b' if kb < ka else None)
+        if got != want:
+            print('  [FAIL] ordering (%s): got %r expected %r' % (note, got, want))
+            ok = False
+
+    # Ungrounded-vs-ungrounded similarity must not decide a preference. This mirrors
+    # the FMT-2/FMT-3 probes that flipped verdict between corpora in the DPO layer.
+    ung_hi = R(NO_FACT_COVERAGE, 90)
+    ung_lo = R(NO_FACT_COVERAGE, 15)
+    if similarity_comparable(ung_hi, ung_lo):
+        print('  [FAIL] two ungrounded results should not be similarity-comparable')
+        ok = False
+    for x, y in ((ung_hi, ung_lo), (ung_lo, ung_hi)):
+        ka, kb = rank_key(x, False), rank_key(y, False)
+        if ka != kb:
+            print('  [FAIL] ungrounded pair did not tie once similarity is suppressed')
+            ok = False
+    # ... but a verdict gap still decides, even when one side is ungrounded
+    if not similarity_comparable(R(PASS, 20), ung_hi):
+        print('  [FAIL] one grounded side should make similarity comparable'); ok = False
+    if rank_key(R(PASS, 20)) >= rank_key(ung_hi):
+        print('  [FAIL] verdict gap suppressed by the guard'); ok = False
+    # and similarity still breaks ties between two GROUNDED results
+    if rank_key(R(REVIEW, 90)) >= rank_key(R(REVIEW, 40)):
+        print('  [FAIL] similarity should still break a grounded tie'); ok = False
+
+    # format reporting: a definite answer sets format_validated, an indefinite one
+    # must not - absence of a check may never read as a clean result
+    fmt_cases = [
+        ('الكلمة (خب) وهي أرض مستوية.', 'dictionary_entry', True,  True),
+        ('خب أرض مستوية بلا بنية',       'dictionary_entry', True,  False),
+        ('نص ما',                        'table',            False, None),
+        ('',                             'dictionary_entry', False, None),
+    ]
+    for resp, ftype, want_validated, want_conforms in fmt_cases:
+        f = cfmt.check_format(resp, ftype)
+        validated = f['status'] in (cfmt.MATCH, cfmt.MISMATCH)
+        conforms = (f['status'] == cfmt.MATCH) if validated else None
+        if validated != want_validated or conforms != want_conforms:
+            print('  [FAIL] format fields for %r/%r -> validated=%s conforms=%s, '
+                  'expected %s/%s' % (resp[:20], ftype, validated, conforms,
+                                      want_validated, want_conforms))
+            ok = False
+
+    # acceptance_decision: the format gate that stops a grounded-but-malformed record
+    def AR(verdict, validated=True, conforms=True, **kw):
+        d = {'verdict': verdict, 'format_validated': validated,
+             'format_conforms': conforms, 'format_type': 'dictionary_entry',
+             'format_status': 'match' if conforms else 'mismatch', 'reason': 'x'}
+        d.update(kw)
+        return d
+
+    acc_cases = [
+        (AR(PASS),                                   ACCEPT,          'grounded + formed'),
+        (AR(PASS, conforms=False),                   REJECT,          'THE GUARD: grounded but malformed must not pass (dictionary_entry)'),
+        (AR(REVIEW, conforms=False),                 REJECT,          'malformed rejected regardless of verdict'),
+        (AR(NO_FACT_COVERAGE, conforms=False),       REJECT,          'malformed rejected regardless of verdict'),
+        # Formats validated only on synthetic cases hold rather than reject.
+        (AR(PASS, conforms=False, format_type='prose'),          HOLD_FOR_REVIEW, 'prose mismatch is weaker evidence'),
+        (AR(PASS, conforms=False, format_type='verse'),          HOLD_FOR_REVIEW, 'verse mismatch is weaker evidence'),
+        (AR(PASS, conforms=False, format_type='list'),           HOLD_FOR_REVIEW, 'list mismatch is weaker evidence'),
+        (AR(PASS, conforms=False, format_type='footnote_block'), HOLD_FOR_REVIEW, 'footnote mismatch is weaker evidence'),
+        # ... but a conforming response in those formats still accepts normally
+        (AR(PASS, format_type='prose'),              ACCEPT,          'prose that conforms accepts'),
+        # ... and a contradiction still outranks any format consideration
+        (AR(FAIL_CONTRADICTED, conforms=False, format_type='prose'), REJECT, 'facts outrank the format tier'),
+        (AR(FAIL_CONTRADICTED),                      REJECT,          'contradiction rejected even when well formed'),
+        (AR(FAIL_CONTRADICTED, conforms=False),      REJECT,          'both wrong'),
+        (AR(INVALID_RECORD),                         REJECT,          'unusable record'),
+        (AR(REVIEW),                                 HOLD_FOR_REVIEW, 'formed but grounding uncertain'),
+        (AR(NO_FACT_COVERAGE),                       HOLD_FOR_REVIEW, 'formed but no fact coverage'),
+        (AR(PASS, validated=False, conforms=None),   HOLD_FOR_REVIEW, 'unchecked format is not a clean one'),
+    ]
+    for res, want, note in acc_cases:
+        got, _ = acceptance_decision(res)
+        if got != want:
+            print('  [FAIL] acceptance_decision (%s): got %s expected %s'
+                  % (note, got, want))
+            ok = False
+    # No format_type may be BOTH hard-reject and review-only, and every format
+    # check_format knows must be in one of the two tiers.
+    if FORMAT_HARD_REJECT & FORMAT_REVIEW_ONLY:
+        print('  [FAIL] a format_type is in both acceptance tiers'); ok = False
+    for ft in cfmt.KNOWN_FORMATS:
+        if ft not in FORMAT_HARD_REJECT and ft not in FORMAT_REVIEW_ONLY:
+            print('  [FAIL] %r is a known format but sits in no acceptance tier' % ft)
+            ok = False
+
+    # A PASS verdict must NEVER be accepted without a definite, conforming format answer.
+    for validated, conforms in ((False, None), (False, True), (True, False), (True, None)):
+        got, _ = acceptance_decision(AR(PASS, validated=validated, conforms=conforms))
+        if got == ACCEPT:
+            print('  [FAIL] PASS accepted with format validated=%s conforms=%s'
+                  % (validated, conforms))
+            ok = False
+    # A bare verify_response() result carries no format fields and must be refused.
+    try:
+        acceptance_decision({'verdict': PASS})
+    except ValueError:
+        pass
+    else:
+        print('  [FAIL] a result without format fields was decided anyway'); ok = False
+
+    # SFT schema validation
+    bad = verify_sft_record({'response': 'x'}, _StubCtx())
+    if bad['verdict'] != INVALID_RECORD or 'instruction' not in bad['reason']:
+        print('  [FAIL] missing SFT fields not reported: %r' % bad)
+        ok = False
+
+    print('passed: %s' % ok)
+    return ok
+
+
+class _StubCtx(object):
+    """Minimal context for schema-validation tests; never reaches the checks."""
+    corpus = 'saudi_dialect'
+    facts = {}
+    chunks = {}
+    bands = SimilarityBands()
+    index = None
+    similarity_available = False
+
+    def similarity(self, response, chunk_id):
+        return None
+
+
+# ------------------------------------------------------------------------------ main
+
+def _fmt_sim(sim):
+    if not sim:
+        return 'unavailable'
+    return ('pct=%5.1f%% margin=%+.3f max=%.3f' %
+            (sim['percentile'], sim['margin'], sim['max']))
+
+
+def main():
+    ap = argparse.ArgumentParser(description='Combined SFT verifier (Task 3).')
+    ap.add_argument('--corpus', choices=sorted(CHUNKS), help='required')
+    ap.add_argument('--in', dest='inp', help='SFT records .jsonl')
+    ap.add_argument('--no-similarity', action='store_true',
+                    help='skip the embedding check (fact signal only)')
+    ap.add_argument('--model', default=csim.DEFAULT_MODEL)
+    ap.add_argument('--baseline', type=int, default=120)
+    ap.add_argument('--sim-high', type=float, default=95.0,
+                    help='percentile at or above which similarity counts as high')
+    ap.add_argument('--sim-low', type=float, default=50.0,
+                    help='percentile below which similarity counts as low')
+    ap.add_argument('--json', action='store_true')
+    ap.add_argument('--self-test', action='store_true')
+    args = ap.parse_args()
+
+    if args.self_test:
+        sys.exit(0 if run_self_test() else 1)
+    if not args.corpus:
+        sys.stderr.write('[verify] REFUSING to run: --corpus is required.\n')
+        sys.exit(1)
+    if not args.inp:
+        sys.stderr.write('[verify] --in <records.jsonl> is required\n')
+        sys.exit(1)
+
+    embedder = None
+    if not args.no_similarity:
+        try:
+            embedder = csim.SentenceTransformerEmbedder(args.model)
+        except ImportError:
+            sys.stderr.write(
+                '[verify] sentence-transformers not installed; running fact-only.\n'
+                '         No PASS will be issued. Install:\n'
+                '           python -m pip install -r requirements-verification.txt\n')
+
+    ctx = VerificationContext(args.corpus, embedder=embedder, baseline_n=args.baseline,
+                              bands=SimilarityBands(args.sim_high, args.sim_low))
+    records = [json.loads(l) for l in open(args.inp, encoding='utf-8') if l.strip()]
+
+    print('[verify] corpus=%s  similarity=%s  bands: high>=%.0f low<%.0f  baseline=%d'
+          % (args.corpus, 'on' if ctx.similarity_available else 'OFF',
+             ctx.bands.high, ctx.bands.low, len(ctx.baseline_ids)))
+    print()
+
+    results = []
+    for rec in records:
+        r = verify_sft_record(rec, ctx)
+        results.append(r)
+        if args.json:
+            continue
+        print('-' * 78)
+        print('[%s%s] %s' % (r['verdict'],
+                             '/' + r['leaning'] if r.get('leaning') else '',
+                             rec.get('label', '')))
+        print('  facts      : %s' % r.get('fact_verdict'))
+        print('  similarity : %s  band=%s' % (_fmt_sim(r.get('similarity')),
+                                              r.get('similarity_band')))
+        print('  format     : %s%s' % (
+            r.get('format_status', 'n/a'),
+            '' if r.get('format_validated') else '  (not validated - verdict unaffected)'))
+        print('  reason     : %s' % r['reason'])
+        for w in r.get('record_warnings', []):
+            print('  WARNING    : %s' % w)
+
+    if args.json:
+        for rec, r in zip(records, results):
+            print(json.dumps({'label': rec.get('label'), **r}, ensure_ascii=False))
+    else:
+        print('-' * 78)
+        counts = {}
+        for r in results:
+            counts[r['verdict']] = counts.get(r['verdict'], 0) + 1
+        print('%d record(s): %s' % (len(results), '  '.join(
+            '%s=%d' % kv for kv in sorted(counts.items()))))
+        print('NOTE: format conformance IS checked and reported per record, but does '
+              'NOT affect the verdict - read format_conforms to gate on it.')
+
+
+if __name__ == '__main__':
+    main()
