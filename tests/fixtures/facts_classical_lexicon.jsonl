@@ -1,0 +1,4 @@
+{"source_chunk_id": "atc_c0001", "source_region": "classical", "extracted_facts": [{"type": "entry_root", "value": "أتى", "position_in_text": 0}, {"type": "citation_authority", "value": "جابر بن حني التغلبي", "position_in_text": 101}]}
+{"source_chunk_id": "atc_c0002", "source_region": "classical", "extracted_facts": [{"type": "entry_root", "value": "أبد", "position_in_text": 0}, {"type": "citation_authority", "value": "امرؤ القيس", "position_in_text": 60}]}
+{"source_chunk_id": "atc_c0003", "source_region": "classical", "extracted_facts": [{"type": "entry_root", "value": "خب", "position_in_text": 0}, {"type": "citation_authority", "value": "طرفة بن العبد", "position_in_text": 32}]}
+{"source_chunk_id": "atc_c0004", "source_region": "classical", "extracted_facts": [{"type": "entry_root", "value": "ميت", "position_in_text": 0}, {"type": "citation_authority", "value": "زهير بن أبي", "position_in_text": 43}]}

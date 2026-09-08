@@ -20,17 +20,35 @@ prompt assembly, the scoring and the cost projection are all model-independent, 
 leaving them until a credential exists would mean writing them under time pressure with
 real money running.
 
-Fixtures are CLASSICAL only, and that is a licence decision
------------------------------------------------------------
-Every probe is built on `asas_albalagha` chunks, which are CC BY-SA 4.0, so these
-fixtures are committable. A probe built on the dialect corpus would inherit its
-rights-pending status and would have to be gitignored like the five existing
-`tests/fixtures/*saudi_dialect*` files.
+Two fixture sets, split by licence
+----------------------------------
+The CLASSICAL probes are built on `asas_albalagha` chunks (CC BY-SA 4.0) and are
+committed. The DIALECT probes quote the rights-pending corpus and are gitignored by
+`tests/fixtures/*saudi_dialect*`, the same rule holding back the fact-checker's dialect
+fixtures. They load when present and are skipped when absent, so a fresh clone runs the
+classical suite and says what it could not load. `validate()` enforces the split as an
+invariant: a probe citing a `dialect_dict_*` chunk that sits in a non-ignored fixture is
+a reported problem, not a filename convention.
 
-The cost is a real coverage gap and is not papered over: `wrong_register` on the DIALECT
-side means dialectal-versus-MSA register, which is a different axis from the
-classical-versus-casual register these probes test. Dialect register probes need to be
-built separately, locally, and gitignored, before the judge is trusted on dialect pairs.
+Why the dialect set is not redundant: the register axis is different
+--------------------------------------------------------------------
+The classical probes test classical-versus-casual register. The dialect probes test
+dialectal-versus-MSA, and that axis has a failure mode the classical set structurally
+cannot reach, tested in both directions:
+
+  direction 1  the metalanguage collapses into the object language - the explanation is
+               written in dialect rather than describing dialect. Analogous to the
+               classical case.
+  direction 2  OVER-MSA-IFICATION, and this is the one that matters. The response
+               rewrites the attested dialectal form into fluent MSA. It reads as BETTER
+               Arabic and is lexicographically worthless, because the attested form is
+               precisely the data a dialect dictionary exists to record.
+
+A judge applying the ordinary heuristic "more formal Arabic is better" scores direction 2
+backwards. On the classical corpus that heuristic is correct, so no classical probe can
+expose it. REG-D-03, REG-D-04 and SFT-D-03 are built for exactly this, and REG-D-06 is a
+negative control: both sides in identical register, differing only in coverage, so a
+judge that routes every difference through register corroborates on the wrong dimension.
 
 What a green run here does and does not establish
 -------------------------------------------------
@@ -65,11 +83,35 @@ SFT_FIXTURE = os.path.join(REPO, 'tests', 'fixtures',
 DPO_FIXTURE = os.path.join(REPO, 'tests', 'fixtures',
                            'judge_dpo_classical_lexicon.jsonl')
 
+# Dialect probes. Present only on a machine that has the rights-pending corpus: both
+# files are gitignored by `tests/fixtures/*saudi_dialect*`, the same rule that holds back
+# the fact-checker's dialect fixtures. They load when present and are skipped silently
+# when absent, exactly like the dialect corpus itself - so a fresh clone runs the
+# classical suite and reports what it could not load, rather than failing.
+SFT_FIXTURE_DIALECT = os.path.join(REPO, 'tests', 'fixtures',
+                                   'judge_sft_saudi_dialect.jsonl')
+DPO_FIXTURE_DIALECT = os.path.join(REPO, 'tests', 'fixtures',
+                                   'judge_dpo_saudi_dialect.jsonl')
+
+# A probe naming a dialect chunk quotes rights-pending text and may live ONLY in a file
+# the ignore rule covers. validate() enforces this rather than trusting the filename.
+DIALECT_CHUNK_PREFIX = 'dialect_dict_'
+RIGHTS_HELD_MARKER = 'saudi_dialect'
+
 VALID_SFT_EXPECT = (jc.JUDGE_PASS, jc.JUDGE_FAIL, jc.JUDGE_REVIEW)
 VALID_DPO_EXPECT = (jc.JUDGE_PASS, jc.JUDGE_FAIL, jc.JUDGE_REVIEW)
 
 
-def load_fixture(path):
+def load_fixture(path, optional=False):
+    """Probe rows, each tagged with the file it came from.
+
+    `_fixture` is stamped on every row so validate() can check the rights invariant: a
+    probe quoting a dialect chunk must have come from a gitignored file. With `optional`,
+    a missing file yields no rows instead of raising - that is how the dialect probes stay
+    invisible on a clone that does not have them.
+    """
+    if optional and not os.path.exists(path):
+        return []
     rows = []
     with io.open(path, encoding='utf-8') as fh:
         for i, line in enumerate(fh, 1):
@@ -77,10 +119,26 @@ def load_fixture(path):
             if not line:
                 continue
             try:
-                rows.append(json.loads(line))
+                rec = json.loads(line)
             except ValueError as exc:
                 raise ValueError('%s line %d: %s' % (path, i, exc))
+            rec['_fixture'] = os.path.basename(path)
+            rows.append(rec)
     return rows
+
+
+def load_all():
+    """(sft_rows, dpo_rows, loaded_names, skipped_names) across classical + dialect."""
+    loaded, skipped = [], []
+    sft, dpo = [], []
+    for path, target in ((SFT_FIXTURE, sft), (DPO_FIXTURE, dpo)):
+        target.extend(load_fixture(path))
+        loaded.append(os.path.basename(path))
+    for path, target in ((SFT_FIXTURE_DIALECT, sft), (DPO_FIXTURE_DIALECT, dpo)):
+        rows = load_fixture(path, optional=True)
+        (loaded if rows else skipped).append(os.path.basename(path))
+        target.extend(rows)
+    return sft, dpo, loaded, skipped
 
 
 def load_corpus():
@@ -99,6 +157,87 @@ def load_corpus():
         else:
             missing.append(corpus)
     return chunks, missing
+
+
+# ------------------------------------------------- the merged DPO path (src/dpo)
+#
+# The probe suite has to validate whatever actually ships. After the LLM_Judge delivery
+# was integrated, the shipping DPO judge is `src/dpo/llm_judge.judge_pair()` behind
+# `judge_pipeline.adjudicate()` - NOT the standalone `judge_dpo.judge_dpo_pair()` these
+# probes were originally written against. A test asset pointed at a module that no longer
+# runs in production is worse than no test: it reports green about code nobody executes.
+#
+# So `--dpo-path merged` (the default) drives the delivery's judge, and `legacy` keeps the
+# standalone one available for comparison. The gameability and discrimination probes are
+# SFT-side and always run through `judge_sft.py`, which the delivery did not replace.
+
+DPO_PATH_MERGED = 'merged'
+DPO_PATH_LEGACY = 'legacy'
+
+
+def _merged_modules():
+    """Import the delivery package lazily; it is optional for a classical-only run."""
+    p = os.path.join(REPO, 'src', 'dpo')
+    if p not in sys.path:
+        sys.path.insert(0, p)
+    import judge_contract as jcon
+    import llm_judge as lj
+    import judge_provider as jprov
+    return jcon, lj, jprov
+
+
+def _to_our_verdict(res):
+    """Map the delivery's JudgeResult onto this suite's verdict vocabulary.
+
+    `unavailable/PositionBias` maps to REVIEW rather than ABSTAIN on purpose: the judge
+    did answer twice, and the refusal is a finding about the judge, not a failure to
+    reach it. That matches what the standalone judge_dpo.py reported for the same
+    condition, so a matrix produced before and after the merge stays comparable.
+    """
+    if res.status == 'ok':
+        a = res.judge_output.assessment
+        if a == 'chosen_better':
+            return jc.JUDGE_PASS
+        if a == 'rejected_better':
+            return jc.JUDGE_FAIL
+        return jc.JUDGE_REVIEW
+    if res.error_type == 'PositionBias':
+        return jc.JUDGE_REVIEW
+    return jc.JUDGE_ABSTAIN
+
+
+def judge_dpo_merged(pair, chunk_text, backend, ledger=None, probe_id=None):
+    """Judge one fixture pair through the delivery's judge, over our HTTP backend."""
+    jcon, lj, jprov = _merged_modules()
+    client = jprov.BackendJudgeClient(
+        jprov.ClientConfig.from_env(provider='suite', model=getattr(backend, 'model_id',
+                                                                   'unknown')),
+        backend=backend)
+    ji = jcon.JudgeInput(
+        prompt=pair.get('prompt', ''),
+        chosen=pair.get('chosen', ''),
+        rejected=pair.get('rejected', ''),
+        source_chunk_id=pair.get('source_chunk_id', ''),
+        source_region=pair.get('source_region', ''),
+        rejection_type=pair.get('rejection_type', ''),
+        model_version=pair.get('model_version', 'suite'),
+        format_type=pair.get('format_type'),
+        source_text=chunk_text or '',
+        deterministic_signals={},
+    )
+    before = getattr(backend, '_suite_calls', 0)
+    res = lj.judge_pair(ji, client, case_label=probe_id)
+    if ledger is not None:
+        ledger.record(None, abstained=(res.status != 'ok'))
+    return {'judge_verdict': _to_our_verdict(res),
+            'reason': res.reason or (res.judge_output.assessment
+                                     if res.judge_output else None),
+            'error_type': res.error_type,
+            'position_biased': (res.error_type == 'PositionBias') or None,
+            'corroborated': (res.judge_output.rejection_type_agrees_with_record
+                             if res.judge_output else None),
+            'passes': 2 if pair.get('rejection_type') in lj.SWAP_CHECK_TYPES else 1,
+            'dpo_path': DPO_PATH_MERGED}
 
 
 # ------------------------------------------------------------------------------ validate
@@ -151,6 +290,20 @@ def validate(sft_rows, dpo_rows, chunks):
         if chunks and cid not in chunks:
             problems.append('DPO %s: chunk %r not in the corpus' % (lbl, cid))
 
+    # RIGHTS INVARIANT. A probe naming a dialect chunk quotes rights-pending source text,
+    # so it may live only in a fixture the ignore rule covers. Checked here rather than
+    # left to the filename, because the failure is silent and expensive: a dialect probe
+    # added to the classical fixture would be committed on the next commit, and the
+    # licence audit would only catch it if the quoted run happened to be long enough.
+    for r in list(sft_rows) + list(dpo_rows):
+        cid = r.get('source_chunk_id') or ''
+        fx = r.get('_fixture') or '(unknown)'
+        if cid.startswith(DIALECT_CHUNK_PREFIX) and RIGHTS_HELD_MARKER not in fx:
+            problems.append(
+                'RIGHTS: %s cites dialect chunk %r but lives in %r, which the ignore '
+                'rule tests/fixtures/*saudi_dialect* does NOT cover - it would be '
+                'committed' % (r.get('label', '?'), cid, fx))
+
     # The suite must actually cover the two types nothing else can check.
     covered = set(r.get('rejection_type') for r in dpo_rows)
     for t in jdpo.NO_AUTOMATED_COVERAGE:
@@ -200,7 +353,8 @@ def dry_run(sft_rows, dpo_rows, chunks, price_in=None, price_out=None):
 
 # ----------------------------------------------------------------------------- run + score
 
-def run_suite(sft_rows, dpo_rows, chunks, backend, ledger=None):
+def run_suite(sft_rows, dpo_rows, chunks, backend, ledger=None,
+              dpo_path=DPO_PATH_MERGED):
     results = []
     for r in sft_rows:
         chunk = chunks.get(r['source_chunk_id'], {})
@@ -209,8 +363,13 @@ def run_suite(sft_rows, dpo_rows, chunks, backend, ledger=None):
         results.append(('SFT', r, res))
     for r in dpo_rows:
         chunk = chunks.get(r['source_chunk_id'], {})
-        res = jdpo.judge_dpo_pair(r, chunk.get('chunk_text', ''), backend,
-                                  ledger=ledger, probe_id=r['label'].split()[0])
+        pid = r['label'].split()[0]
+        if dpo_path == DPO_PATH_MERGED:
+            res = judge_dpo_merged(r, chunk.get('chunk_text', ''), backend,
+                                   ledger=ledger, probe_id=pid)
+        else:
+            res = jdpo.judge_dpo_pair(r, chunk.get('chunk_text', ''), backend,
+                                      ledger=ledger, probe_id=pid)
         results.append(('DPO', r, res))
     return results
 
@@ -282,13 +441,42 @@ def print_matrix(sc, ledger=None):
 
 def run_self_test():
     ok = True
-    sft = load_fixture(SFT_FIXTURE)
-    dpo = load_fixture(DPO_FIXTURE)
+    sft, dpo, loaded, skipped = load_all()
     chunks, missing = load_corpus()
 
-    if len(sft) < 10:
-        print('  [FAIL] SFT suite has %d probes, the brief asks for 10-15' % len(sft))
+    if len(load_fixture(SFT_FIXTURE)) < 10:
+        print('  [FAIL] classical SFT suite has %d probes, the brief asks for 10-15'
+              % len(load_fixture(SFT_FIXTURE)))
         ok = False
+
+    # The rights guard must actually fire. Simulate a dialect probe smuggled into the
+    # committed classical fixture - the exact mistake it exists to catch.
+    smuggled = [{'label': 'X', 'source_chunk_id': 'dialect_dict_najdi_c0065',
+                 'instruction': 'i', 'response': 'r', 'format_type': 'dictionary_entry',
+                 'expect_verdict': jc.JUDGE_PASS, 'expect_fail_dimensions': [],
+                 '_fixture': 'judge_sft_classical_lexicon.jsonl'}]
+    if not any('RIGHTS:' in p for p in validate(smuggled, [], {})):
+        print('  [FAIL] the rights invariant did not fire on a dialect probe placed in '
+              'a committed fixture')
+        ok = False
+    # ...and must NOT fire when the same probe sits in the gitignored fixture.
+    okfile = [dict(smuggled[0], _fixture='judge_sft_saudi_dialect.jsonl')]
+    if any('RIGHTS:' in p for p in validate(okfile, [], {})):
+        print('  [FAIL] the rights invariant fired on a correctly-ignored fixture')
+        ok = False
+
+    # If the dialect probes are present, they must cover BOTH register directions.
+    if any(r.get('_fixture', '').find(RIGHTS_HELD_MARKER) >= 0 for r in dpo):
+        dreg = [r for r in dpo if r.get('rejection_type') == 'wrong_register'
+                and RIGHTS_HELD_MARKER in r.get('_fixture', '')]
+        if len(dreg) < 4:
+            print('  [FAIL] dialect register probes: %d, expected at least 4 (two per '
+                  'direction)' % len(dreg))
+            ok = False
+        if not any('TRAP' in r.get('label', '') for r in dreg):
+            print('  [FAIL] no over-MSA-ification TRAP probe among the dialect register '
+                  'set - the failure mode the classical probes cannot reach is untested')
+            ok = False
 
     problems = validate(sft, dpo, chunks)
     for p in problems:
@@ -334,7 +522,7 @@ def run_self_test():
         by_key[pid] = payload
         by_key[pid + '_swap'] = payload      # same slot both times => position bias
     be = jc.ScriptedBackend(by_key=by_key)
-    sc = score(run_suite(sft, dpo, chunks, be))
+    sc = score(run_suite(sft, dpo, chunks, be, dpo_path=DPO_PATH_LEGACY))
     if sc['accuracy'] is None or sc['accuracy'] > 0.75:
         print('  [FAIL] a judge that passes everything scored %s - the suite does not '
               'discriminate' % sc['accuracy'])
@@ -358,8 +546,54 @@ def run_self_test():
               % d['calls'])
         ok = False
 
+    # The MERGED path is what ships, so the suite must be able to drive it and must still
+    # catch position bias through it. Scripted in the DELIVERY's wire format, which is
+    # different from the legacy block above - that difference is the whole reason this
+    # assertion exists separately rather than being folded into it.
+    import json as _json
+    zero_cov = [r for r in dpo if r.get('rejection_type') in jdpo.NO_AUTOMATED_COVERAGE]
+    if zero_cov:
+        r0 = zero_cov[0]
+        pid = r0['label'].split()[0]
+        same_slot = _json.dumps({
+            'schema_version': 'judge-1', 'judge_model_version': 'suite/scripted',
+            'assessment': 'chosen_better', 'weakness_present': False,
+            'rejection_type': None, 'rejection_type_agrees_with_record': None,
+            'type_scores': {}, 'confidence': 0.9, 'evidence': [], 'notes': None})
+        be_m = jc.ScriptedBackend(by_key={pid: same_slot, pid + '_swap': same_slot})
+        res = judge_dpo_merged(r0, chunks.get(r0['source_chunk_id'], {}).get('chunk_text', ''),
+                               be_m, probe_id=pid)
+        if not res.get('position_biased') or res['judge_verdict'] != jc.JUDGE_REVIEW:
+            print('  [FAIL] merged DPO path did not catch position bias on %r: %s'
+                  % (pid, res))
+            ok = False
+        if res.get('dpo_path') != DPO_PATH_MERGED:
+            print('  [FAIL] merged path did not label itself')
+            ok = False
+        # a covered type must still cost one call through the merged path
+        covered = [r for r in dpo
+                   if r.get('rejection_type') not in jdpo.NO_AUTOMATED_COVERAGE]
+        if covered:
+            rc = covered[0]
+            pidc = rc['label'].split()[0]
+            good = _json.dumps({
+                'schema_version': 'judge-1', 'judge_model_version': 'suite/scripted',
+                'assessment': 'chosen_better', 'weakness_present': False,
+                'rejection_type': None, 'rejection_type_agrees_with_record': None,
+                'type_scores': {}, 'confidence': 0.9, 'evidence': [], 'notes': None})
+            be_c = jc.ScriptedBackend(by_key={pidc: good})
+            rr = judge_dpo_merged(rc, chunks.get(rc['source_chunk_id'], {}).get('chunk_text', ''),
+                                  be_c, probe_id=pidc)
+            if rr['judge_verdict'] != jc.JUDGE_PASS or rr.get('passes') != 1:
+                print('  [FAIL] merged path on a covered type: %s' % rr)
+                ok = False
+
     if missing:
         print('  [note] corpora not present on this machine: %s' % ', '.join(missing))
+    print('  [note] fixtures loaded: %s' % ', '.join(loaded))
+    if skipped:
+        print('  [note] fixtures absent (gitignored): %s' % ', '.join(skipped))
+    print('  [note] %d SFT + %d DPO probes in this run' % (len(sft), len(dpo)))
     print('passed: %s' % ok)
     return ok
 
@@ -372,6 +606,9 @@ if __name__ == '__main__':
     ap.add_argument('--dry-run', action='store_true')
     ap.add_argument('--run', action='store_true')
     ap.add_argument('--backend', default='qwen')
+    ap.add_argument('--dpo-path', choices=[DPO_PATH_MERGED, DPO_PATH_LEGACY],
+                    default=DPO_PATH_MERGED,
+                    help='which DPO judge to exercise; merged = the shipping src/dpo path')
     ap.add_argument('--transcript', help='record/replay JSONL for offline reruns')
     ap.add_argument('--replay-only', action='store_true')
     ap.add_argument('--price-in', type=float)
@@ -381,9 +618,12 @@ if __name__ == '__main__':
     if a.self_test:
         sys.exit(0 if run_self_test() else 1)
 
-    sft_rows = load_fixture(SFT_FIXTURE)
-    dpo_rows = load_fixture(DPO_FIXTURE)
+    sft_rows, dpo_rows, loaded, skipped = load_all()
     chunks, missing = load_corpus()
+    sys.stderr.write('fixtures loaded: %s\n' % ', '.join(loaded))
+    if skipped:
+        sys.stderr.write('fixtures NOT on this machine (gitignored, expected on a '
+                         'fresh clone): %s\n' % ', '.join(skipped))
     if missing:
         sys.stderr.write('note: corpora not on this machine: %s\n' % ', '.join(missing))
 
@@ -406,7 +646,9 @@ if __name__ == '__main__':
             backend = jc.CachingBackend(backend, a.transcript,
                                         replay_only=a.replay_only)
         led = jc.UsageLedger(a.price_in, a.price_out)
-        sc = score(run_suite(sft_rows, dpo_rows, chunks, backend, ledger=led))
+        sc = score(run_suite(sft_rows, dpo_rows, chunks, backend, ledger=led,
+                             dpo_path=a.dpo_path))
+        sys.stderr.write('DPO path: %s\\n' % a.dpo_path)
         print_matrix(sc, led)
         sys.exit(0)
 

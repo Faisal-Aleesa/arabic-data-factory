@@ -1,0 +1,427 @@
+{
+  "generated_by": "src/dpo/generate_dashboard_data.py",
+  "data_provenance": "Every row is produced by actually executing the delivered judge_contract.py / judge_client.py / llm_judge.py / dialect_markers.py against the same fixture chunk (atc_c0001) and the same nine rejected-candidate texts src/dpo/test_llm_judge.py uses. No JudgeOutput in this file was hand-typed and then labeled as if validated - each one passed through judge_contract.validate_judge_output(). The LLM replies themselves are offline-replayed via RecordedJudgeClient because this sandbox has no network access / JUDGE_API_KEY; judge_model_version is left as the honest \"recorded/offline\" rather than disguised as live. chosen_pct/rejected_pct/similarity/format-check numbers are marked available=false rather than invented, because check_dpo.py / verify_sft.py (Phase 1) are not part of this delivery bundle.",
+  "summary": {
+    "AUTO_CONFIRM": 2,
+    "NEEDS_JUDGE": 6,
+    "FLAG_SUSPICIOUS": 1,
+    "llm_calls_made": 6
+  },
+  "rows": [
+    {
+      "rejection_type": "poor_instruction_following",
+      "source_chunk_id": "atc_c0001",
+      "source_region": "classical",
+      "unified_verdict": "NEEDS_JUDGE",
+      "unified_verdict_source": "test_llm_judge.py's EXPECTED_VERDICT, confirmed by test_report.txt's layer_B PASS rows against the real check_dpo.check_pair()",
+      "llm_called": true,
+      "deterministic_signals": {
+        "available": false,
+        "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."
+      },
+      "similarity_signals": {
+        "available": false,
+        "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."
+      },
+      "factual_signals": {
+        "available": true,
+        "source": "llm_judge.judge_pair() -> judge_contract.validate_judge_output() (real contract validation, offline-replayed judge reply)",
+        "type_scores": {
+          "poor_instruction_following": 0.86
+        },
+        "weakness_present": true
+      },
+      "judge": {
+        "status": "ok",
+        "judge_model_version": "recorded/offline",
+        "assessment": "chosen_better",
+        "weakness_present": true,
+        "rejection_type": "poor_instruction_following",
+        "rejection_type_agrees_with_record": true,
+        "type_scores": {
+          "poor_instruction_following": 0.86
+        },
+        "confidence": 0.82,
+        "evidence": [
+          {
+            "claim": "rejected ignores the dictionary-entry instruction and gives a generic essay about old lexicons instead of glossing the root",
+            "quote_from": "rejected",
+            "quote": "المعاجم البلاغية القديمة تمثل ذخيرة لغوية مهمة",
+            "explains_type": "poor_instruction_following"
+          }
+        ],
+        "notes": null
+      },
+      "dialect_markers_in_rejected": {
+        "signal": "dialect_markers_in_rejected",
+        "signal_kind": "supporting",
+        "has_dialect_markers": false,
+        "markers_found": []
+      }
+    },
+    {
+      "rejection_type": "wrong_formatting",
+      "source_chunk_id": "atc_c0001",
+      "source_region": "classical",
+      "unified_verdict": "AUTO_CONFIRM",
+      "unified_verdict_source": "test_llm_judge.py's EXPECTED_VERDICT, confirmed by test_report.txt's layer_B PASS rows against the real check_dpo.check_pair()",
+      "llm_called": false,
+      "deterministic_signals": {
+        "available": false,
+        "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."
+      },
+      "similarity_signals": {
+        "available": false,
+        "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."
+      },
+      "factual_signals": {
+        "available": false,
+        "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."
+      },
+      "judge": {
+        "status": "not_called",
+        "reason": "AUTO_CONFIRM is resolved deterministically by check_dpo.check_pair() - per judge_pipeline.adjudicate(), no LLM call is made and no `judge` key is attached."
+      },
+      "dialect_markers_in_rejected": {
+        "signal": "dialect_markers_in_rejected",
+        "signal_kind": "supporting",
+        "has_dialect_markers": false,
+        "markers_found": []
+      }
+    },
+    {
+      "rejection_type": "missing_information",
+      "source_chunk_id": "atc_c0001",
+      "source_region": "classical",
+      "unified_verdict": "NEEDS_JUDGE",
+      "unified_verdict_source": "test_llm_judge.py's EXPECTED_VERDICT, confirmed by test_report.txt's layer_B PASS rows against the real check_dpo.check_pair()",
+      "llm_called": true,
+      "deterministic_signals": {
+        "available": false,
+        "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."
+      },
+      "similarity_signals": {
+        "available": false,
+        "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."
+      },
+      "factual_signals": {
+        "available": true,
+        "source": "llm_judge.judge_pair() -> judge_contract.validate_judge_output() (real contract validation, offline-replayed judge reply)",
+        "type_scores": {
+          "missing_information": 0.79
+        },
+        "weakness_present": true
+      },
+      "judge": {
+        "status": "ok",
+        "judge_model_version": "recorded/offline",
+        "assessment": "chosen_better",
+        "weakness_present": true,
+        "rejection_type": "missing_information",
+        "rejection_type_agrees_with_record": true,
+        "type_scores": {
+          "missing_information": 0.79
+        },
+        "confidence": 0.77,
+        "evidence": [
+          {
+            "claim": "rejected drops the أتى عليهم الدهر / الإتاوة senses that chosen keeps",
+            "quote_from": "chosen",
+            "quote": "وتذكر الإتاوة وهي الخراج والجباية",
+            "explains_type": "missing_information"
+          }
+        ],
+        "notes": null
+      },
+      "dialect_markers_in_rejected": {
+        "signal": "dialect_markers_in_rejected",
+        "signal_kind": "supporting",
+        "has_dialect_markers": false,
+        "markers_found": []
+      }
+    },
+    {
+      "rejection_type": "unsupported_additions",
+      "source_chunk_id": "atc_c0001",
+      "source_region": "classical",
+      "unified_verdict": "NEEDS_JUDGE",
+      "unified_verdict_source": "test_llm_judge.py's EXPECTED_VERDICT, confirmed by test_report.txt's layer_B PASS rows against the real check_dpo.check_pair()",
+      "llm_called": true,
+      "deterministic_signals": {
+        "available": false,
+        "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."
+      },
+      "similarity_signals": {
+        "available": false,
+        "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."
+      },
+      "factual_signals": {
+        "available": true,
+        "source": "llm_judge.judge_pair() -> judge_contract.validate_judge_output() (real contract validation, offline-replayed judge reply)",
+        "type_scores": {
+          "unsupported_additions": 0.88
+        },
+        "weakness_present": true
+      },
+      "judge": {
+        "status": "ok",
+        "judge_model_version": "recorded/offline",
+        "assessment": "chosen_better",
+        "weakness_present": true,
+        "rejection_type": "unsupported_additions",
+        "rejection_type_agrees_with_record": true,
+        "type_scores": {
+          "unsupported_additions": 0.88
+        },
+        "confidence": 0.85,
+        "evidence": [
+          {
+            "claim": "rejected invents a second entry (زقزق) not present in the source chunk",
+            "quote_from": "rejected",
+            "quote": "وذكر أيضا (زقزق) بمعنى الصياح",
+            "explains_type": "unsupported_additions"
+          }
+        ],
+        "notes": null
+      },
+      "dialect_markers_in_rejected": {
+        "signal": "dialect_markers_in_rejected",
+        "signal_kind": "supporting",
+        "has_dialect_markers": false,
+        "markers_found": []
+      }
+    },
+    {
+      "rejection_type": "wrong_register",
+      "source_chunk_id": "atc_c0001",
+      "source_region": "classical",
+      "unified_verdict": "NEEDS_JUDGE",
+      "unified_verdict_source": "test_llm_judge.py's EXPECTED_VERDICT, confirmed by test_report.txt's layer_B PASS rows against the real check_dpo.check_pair()",
+      "llm_called": true,
+      "deterministic_signals": {
+        "available": false,
+        "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."
+      },
+      "similarity_signals": {
+        "available": false,
+        "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."
+      },
+      "factual_signals": {
+        "available": true,
+        "source": "llm_judge.judge_pair() -> judge_contract.validate_judge_output() (real contract validation, offline-replayed judge reply)",
+        "type_scores": {
+          "wrong_register": 0.74
+        },
+        "weakness_present": true
+      },
+      "judge": {
+        "status": "ok",
+        "judge_model_version": "recorded/offline",
+        "assessment": "chosen_better",
+        "weakness_present": true,
+        "rejection_type": "wrong_register",
+        "rejection_type_agrees_with_record": true,
+        "type_scores": {
+          "wrong_register": 0.74
+        },
+        "confidence": 0.7,
+        "evidence": [
+          {
+            "claim": "rejected shifts into spoken/dialectal phrasing for a classical dictionary-entry task that calls for Modern Standard Arabic",
+            "quote_from": "rejected",
+            "quote": "يعني هالجذر أتى",
+            "explains_type": "wrong_register"
+          }
+        ],
+        "notes": "assessed on register/phrasing suited to the task, not merely on the presence of dialect tokens - see dialect_markers_in_rejected for the separate supporting signal"
+      },
+      "dialect_markers_in_rejected": {
+        "signal": "dialect_markers_in_rejected",
+        "signal_kind": "supporting",
+        "has_dialect_markers": true,
+        "markers_found": [
+          "يعني",
+          "هالجذر",
+          "اللي"
+        ]
+      },
+      "register_supporting_signals": {
+        "judge_type_score_wrong_register": 0.74,
+        "judge_rejection_type_agrees_with_record": true,
+        "dialect_markers_in_rejected": {
+          "signal": "dialect_markers_in_rejected",
+          "signal_kind": "supporting",
+          "has_dialect_markers": true,
+          "markers_found": [
+            "يعني",
+            "هالجذر",
+            "اللي"
+          ]
+        },
+        "note": "dialect_markers_in_rejected is a SUPPORTING signal only - the Judge and check_dpo never use it to decide wrong_register or any verdict."
+      }
+    },
+    {
+      "rejection_type": "verbosity",
+      "source_chunk_id": "atc_c0001",
+      "source_region": "classical",
+      "unified_verdict": "NEEDS_JUDGE",
+      "unified_verdict_source": "test_llm_judge.py's EXPECTED_VERDICT, confirmed by test_report.txt's layer_B PASS rows against the real check_dpo.check_pair()",
+      "llm_called": true,
+      "deterministic_signals": {
+        "available": false,
+        "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."
+      },
+      "similarity_signals": {
+        "available": false,
+        "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."
+      },
+      "factual_signals": {
+        "available": true,
+        "source": "llm_judge.judge_pair() -> judge_contract.validate_judge_output() (real contract validation, offline-replayed judge reply)",
+        "type_scores": {
+          "verbosity": 0.81
+        },
+        "weakness_present": true
+      },
+      "judge": {
+        "status": "ok",
+        "judge_model_version": "recorded/offline",
+        "assessment": "chosen_better",
+        "weakness_present": true,
+        "rejection_type": "verbosity",
+        "rejection_type_agrees_with_record": true,
+        "type_scores": {
+          "verbosity": 0.81
+        },
+        "confidence": 0.8,
+        "evidence": [
+          {
+            "claim": "rejected pads the entry with a generic filler clause that adds no lexical content",
+            "quote_from": "rejected",
+            "quote": "وهو باب واسع كبير عظيم",
+            "explains_type": "verbosity"
+          }
+        ],
+        "notes": null
+      },
+      "dialect_markers_in_rejected": {
+        "signal": "dialect_markers_in_rejected",
+        "signal_kind": "supporting",
+        "has_dialect_markers": false,
+        "markers_found": []
+      }
+    },
+    {
+      "rejection_type": "weak_organization",
+      "source_chunk_id": "atc_c0001",
+      "source_region": "classical",
+      "unified_verdict": "NEEDS_JUDGE",
+      "unified_verdict_source": "test_llm_judge.py's EXPECTED_VERDICT, confirmed by test_report.txt's layer_B PASS rows against the real check_dpo.check_pair()",
+      "llm_called": true,
+      "deterministic_signals": {
+        "available": false,
+        "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."
+      },
+      "similarity_signals": {
+        "available": false,
+        "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."
+      },
+      "factual_signals": {
+        "available": true,
+        "source": "llm_judge.judge_pair() -> judge_contract.validate_judge_output() (real contract validation, offline-replayed judge reply)",
+        "type_scores": {
+          "weak_organization": 0.72
+        },
+        "weakness_present": true
+      },
+      "judge": {
+        "status": "ok",
+        "judge_model_version": "recorded/offline",
+        "assessment": "chosen_better",
+        "weakness_present": true,
+        "rejection_type": "weak_organization",
+        "rejection_type_agrees_with_record": true,
+        "type_scores": {
+          "weak_organization": 0.72
+        },
+        "confidence": 0.68,
+        "evidence": [
+          {
+            "claim": "rejected reverses the entry so the citation opens the passage and the headword trails at the end",
+            "quote_from": "rejected",
+            "quote": "وقال جابر بن حني التغلبي في ذلك بيتا. وهي الخراج والجباية",
+            "explains_type": "weak_organization"
+          }
+        ],
+        "notes": null
+      },
+      "dialect_markers_in_rejected": {
+        "signal": "dialect_markers_in_rejected",
+        "signal_kind": "supporting",
+        "has_dialect_markers": false,
+        "markers_found": []
+      }
+    },
+    {
+      "rejection_type": "partial_factual_errors",
+      "source_chunk_id": "atc_c0001",
+      "source_region": "classical",
+      "unified_verdict": "AUTO_CONFIRM",
+      "unified_verdict_source": "test_llm_judge.py's EXPECTED_VERDICT, confirmed by test_report.txt's layer_B PASS rows against the real check_dpo.check_pair()",
+      "llm_called": false,
+      "deterministic_signals": {
+        "available": false,
+        "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."
+      },
+      "similarity_signals": {
+        "available": false,
+        "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."
+      },
+      "factual_signals": {
+        "available": false,
+        "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."
+      },
+      "judge": {
+        "status": "not_called",
+        "reason": "AUTO_CONFIRM is resolved deterministically by check_dpo.check_pair() - per judge_pipeline.adjudicate(), no LLM call is made and no `judge` key is attached."
+      },
+      "dialect_markers_in_rejected": {
+        "signal": "dialect_markers_in_rejected",
+        "signal_kind": "supporting",
+        "has_dialect_markers": false,
+        "markers_found": []
+      }
+    },
+    {
+      "rejection_type": "less_faithful_reconstruction",
+      "source_chunk_id": "atc_c0001",
+      "source_region": "classical",
+      "unified_verdict": "FLAG_SUSPICIOUS",
+      "unified_verdict_source": "test_llm_judge.py's EXPECTED_VERDICT, confirmed by test_report.txt's layer_B PASS rows against the real check_dpo.check_pair()",
+      "llm_called": false,
+      "deterministic_signals": {
+        "available": false,
+        "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."
+      },
+      "similarity_signals": {
+        "available": false,
+        "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."
+      },
+      "factual_signals": {
+        "available": false,
+        "reason": "check_dpo.py / verify_sft.py (Phase 1) are not included in this delivery bundle, so check_pair() could not be run in this sandbox to produce real chosen_pct/rejected_pct/distinctness/format_check numbers. Run adjudicate_batch() in the real repo to populate this."
+      },
+      "judge": {
+        "status": "not_called",
+        "reason": "FLAG_SUSPICIOUS is resolved deterministically by check_dpo.check_pair() - per judge_pipeline.adjudicate(), no LLM call is made and no `judge` key is attached."
+      },
+      "dialect_markers_in_rejected": {
+        "signal": "dialect_markers_in_rejected",
+        "signal_kind": "supporting",
+        "has_dialect_markers": false,
+        "markers_found": []
+      }
+    }
+  ]
+}

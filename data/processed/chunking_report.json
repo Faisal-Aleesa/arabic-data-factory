@@ -1,0 +1,68 @@
+{
+  "config": {
+    "target_min_tokens": 200,
+    "target_max_tokens": 800,
+    "token_count_method": "whitespace_word_count (word-based approximation)",
+    "corpus": "saudi_dialect",
+    "source_format": "dictionary",
+    "boundary_rule": "whole units only, as segmented by Stage 1's --format",
+    "oversize_policy": "kept whole and flagged, never split mid-unit",
+    "poem_boundary_rule": "n/a",
+    "text_variant": "original"
+  },
+  "documents_chunked": 5,
+  "documents_skipped": [],
+  "total_chunks": 337,
+  "total_tokens": 252802,
+  "chunk_flag_counts": {
+    "below_target_min": 2
+  },
+  "per_document": [
+    {
+      "doc_id": "dialect_dict_eastern",
+      "region": "eastern",
+      "title": "معجم اللهجات المحكية في المملكة العربية السعودية - eastern",
+      "unit_type": "entry_headword",
+      "units": 872,
+      "chunks": 30,
+      "tokens": 22007
+    },
+    {
+      "doc_id": "dialect_dict_najdi",
+      "region": "najdi",
+      "title": "معجم اللهجات المحكية في المملكة العربية السعودية - najdi",
+      "unit_type": "entry_headword",
+      "units": 2159,
+      "chunks": 130,
+      "tokens": 97703
+    },
+    {
+      "doc_id": "dialect_dict_northern",
+      "region": "northern",
+      "title": "معجم اللهجات المحكية في المملكة العربية السعودية - northern",
+      "unit_type": "entry_headword",
+      "units": 1192,
+      "chunks": 49,
+      "tokens": 37574
+    },
+    {
+      "doc_id": "dialect_dict_southern",
+      "region": "southern",
+      "title": "معجم اللهجات المحكية في المملكة العربية السعودية - southern",
+      "unit_type": "entry_headword",
+      "units": 2830,
+      "chunks": 103,
+      "tokens": 77439
+    },
+    {
+      "doc_id": "dialect_dict_western",
+      "region": "western",
+      "title": "معجم اللهجات المحكية في المملكة العربية السعودية - western",
+      "unit_type": "entry_headword",
+      "units": 791,
+      "chunks": 25,
+      "tokens": 18079
+    }
+  ],
+  "output": "data/processed/chunks.jsonl"
+}

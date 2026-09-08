@@ -1,0 +1,63 @@
+{
+  "config": {
+    "exact_method": "sha256 of whitespace-collapsed cleaned_text",
+    "near_method": "MinHash+LSH, word 5-shingles, num_perm=128",
+    "jaccard_threshold": 0.8,
+    "lsh_index_threshold": 0.6,
+    "lsh_note": "index built looser than the decision threshold so banding does not drop borderline pairs; every candidate is re-checked against the true Jaccard",
+    "near_duplicate_policy": "flag only, never auto-remove"
+  },
+  "corpus": "saudi_dialect",
+  "documents_scanned": 5,
+  "exact_duplicate_groups": [],
+  "exact_duplicates_removed": 0,
+  "exact_duplicate_map": {},
+  "near_duplicate_candidate_pairs": 0,
+  "near_duplicate_pairs": [],
+  "near_duplicates_flagged": [],
+  "documents_kept": [
+    "dialect_dict_eastern",
+    "dialect_dict_najdi",
+    "dialect_dict_northern",
+    "dialect_dict_southern",
+    "dialect_dict_western"
+  ],
+  "documents_kept_count": 5,
+  "per_document": [
+    {
+      "doc_id": "dialect_dict_eastern",
+      "region": "eastern",
+      "sha256": "a50af3f3f1483c20a285389a6e630f93ba58642d3c8878cbf78ad450b6a139db",
+      "shingle_count": 21668,
+      "status": "unique"
+    },
+    {
+      "doc_id": "dialect_dict_najdi",
+      "region": "najdi",
+      "sha256": "d08438ea5d8c32a69e7ffeb8479739a5600b04c6f64a3dd6e98ac0c04394c37a",
+      "shingle_count": 96301,
+      "status": "unique"
+    },
+    {
+      "doc_id": "dialect_dict_northern",
+      "region": "northern",
+      "sha256": "0f6b22b62614d12816800eb391ef2e771c0226503a62848f3bd3d9bf4b8def60",
+      "shingle_count": 36942,
+      "status": "unique"
+    },
+    {
+      "doc_id": "dialect_dict_southern",
+      "region": "southern",
+      "sha256": "a8b66b75b27d44f87dbccf0261a22d117523b831820be05a7fd64f46971436c4",
+      "shingle_count": 75396,
+      "status": "unique"
+    },
+    {
+      "doc_id": "dialect_dict_western",
+      "region": "western",
+      "sha256": "dd4ac23a02abd34c627a5eb75651fc8791b07bce2048b01e03e868d71ffcdd55",
+      "shingle_count": 17977,
+      "status": "unique"
+    }
+  ]
+}

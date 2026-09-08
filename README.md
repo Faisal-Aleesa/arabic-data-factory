@@ -56,16 +56,6 @@ python src/data_engineering/eda.py    --out data/eda/eda_report_saudi_dialect.md
                                       --no-examples
 ```
 
-Before sending chunks to any post-training generator, run the local pre-generation
-gate:
-
-```bash
-python src/verification/validate_chunks.py data/processed/chunks.jsonl
-```
-
-It checks the chunk schema, supported format labels, non-empty text and blocking review
-flags without making model calls. A non-zero exit means generation should not start.
-
 | stage | what it does |
 |---|---|
 | `ingest_dialect_dictionary.py` | acquisition: splits the source extract by verified page range, strips page furniture, repairs displaced diacritics, holds back damaged pages |

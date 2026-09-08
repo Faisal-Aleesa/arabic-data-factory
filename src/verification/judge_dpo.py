@@ -61,6 +61,34 @@ position handling and verdict folding against a scripted backend. It does not an
 establish that a real model judges Arabic register well - and on the two zero-coverage
 types there will be no automated way to find out, so those verdicts should be spot-checked
 by a human reviewer before the type is trusted at scale.
+
+STATUS: NOT THE SHIPPING DPO JUDGE. Kept deliberately - do not delete.
+------------------------------------------------------------------------
+As of the LLM_Judge integration (commit `3507c67`), production DPO judging runs through
+`src/dpo/llm_judge.py` behind `judge_pipeline.adjudicate()`. This module is reachable
+only via `judge_suite.py --dpo-path legacy`. That makes it unreferenced by the live path,
+which is exactly the condition under which code quietly rots - so its remaining job is
+written down here rather than left to be rediscovered.
+
+**It is the reference implementation for the type-priming fix.** The merged judge is told
+the record's `rejection_type` before being asked whether it agrees
+(`judge_contract.JudgeInput.to_prompt_payload` -> `rejection_type_declared`). That is a
+leading question: agreement means "not contradicted", not independent confirmation, and
+escalation can therefore under-detect a genuine mislabel. See the KNOWN LIMITATION
+section in `src/dpo/judge_contract.py`.
+
+**What the follow-up needs to port from here: `CORROBORATING_DIMENSION`.** This module
+never passes the declared type to the model. It asks for a blind score on all eight
+charter dimensions, then maps rejection_type -> the dimension that should have separated
+the pair and checks THAT. Corroboration becomes a fact about the judge's own independent
+scoring instead of about the hint it was given. `judge_dpo_pair()` shows the whole
+arrangement end to end, and `run_self_test()` pins it.
+
+Already ported, so do NOT port it twice: the position-bias swap check now lives in
+`llm_judge.judge_pair()`, deriving its type set from `check_dpo.DETECTABILITY` the same
+way `NO_AUTOMATED_COVERAGE` does here.
+
+هذه الوحدة ليست الحَكَم المستخدم في الإنتاج، وتُحفظ مرجعًا لإصلاح تحيّز النوع المُعلن.
 """
 
 from __future__ import unicode_literals
