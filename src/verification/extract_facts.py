@@ -268,6 +268,65 @@ CLA_FIGURATIVE = re.compile(r'ومن\s+المجاز')
 CLA_CITATION = re.compile(CITATION_VERB + r'\s+' + CITATION_NAME)
 
 
+# ------------------------------------------------------- quoted lexical items (responses)
+#
+# NOT a chunk-extraction rule. These patterns run over GENERATED text - an instruction or
+# a response - not over corpus text, and they exist because the corpus rules above find
+# nothing in conversational paraphrase.
+#
+# MEASURED on 4,645 real reconstructed records (2026-09-09): 3,333 returned
+# NO_CHECKABLE_CLAIMS. The cause is structural, not a gap in pattern coverage. Every
+# classical chunk rule anchors on dictionary-entry SHAPE - `CLA_ROOT` needs `^root:` at a
+# line start - and a conversational answer never has that shape. But the content is not
+# unverifiable: 99% of those records quote a lexical item, and 94% of the quoted spans
+# appear verbatim in their own source chunk against a 1% hit rate on a random other chunk.
+#
+# What the responses actually do is quote an item and gloss it:
+#     Q: ما هي 'جهمة الليل'؟   ->   A: هي الجزء الأخير من الليل
+# so the item is the checkable specific, and `check_facts` judges the gloss around it.
+#
+# الاقتباس بين علامتين هو المُدَّعى القابل للفحص في النص المحاوَر.
+#
+# Single quotes are included, and that is the whole reason this is a separate pattern:
+# `check_facts.LEXICAL_MARKED` covers parentheses and double quotes only, so it already
+# caught the 46% of instructions using " and missed the 53% using '. The apostrophe is
+# also an English possessive, so a span is kept only if it contains Arabic.
+QUOTED_SPAN = re.compile(r'[\'‘’"“”«»]'
+                         r'([^\'‘’"“”«»\n]{2,60}?)'
+                         r'[\'‘’"“”«»]')
+
+# A single token is usually a bare word that the root rules already reach, and it is the
+# weakest case for specificity: measured, multi-word spans hit a random other chunk 0% of
+# the time against 2% for all spans. Multi-word is where the discrimination lives.
+QUOTED_MIN_TOKENS = 2
+
+
+def quoted_lexical_items(text, min_tokens=QUOTED_MIN_TOKENS):
+    """Quoted Arabic spans in generated text, longest-first, de-duplicated.
+
+    Returns the ORIGINAL surface strings. Normalisation for matching belongs to the
+    caller - this project ships `paragraphs_original` and a folded key is a matching
+    device, never an output.
+    """
+    seen, out = set(), []
+    for m in QUOTED_SPAN.finditer(text or ''):
+        inner = m.group(1).strip()
+        if not inner or not re.search(ARW, inner):
+            continue
+        # Count ARABIC tokens, not whitespace tokens. A quoted year like "1426 هـ" has
+        # two whitespace tokens but one Arabic one, and it must not become a lexical
+        # item: years are already covered by the era rules above, and the classical
+        # profile deliberately extracts no numbers at all (see the module docstring), so
+        # a quoted year here would be judged against a table that never holds one.
+        ar_tokens = [t for t in inner.split() if re.search(ARW, t)]
+        if len(ar_tokens) < min_tokens:
+            continue
+        if inner not in seen:
+            seen.add(inner)
+            out.append(inner)
+    return out
+
+
 def extract_classical_lexicon(chunk_text):
     """Extract roots, figurative senses and citations from the classical lexicon.
 

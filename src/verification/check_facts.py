@@ -162,7 +162,7 @@ REGION_ATTRIB = re.compile(
 LEXICAL_MARKED = re.compile(r'[\(\"«“]([^\)\"»”\n]{1,30})[\)\"»”]')
 
 
-def response_assertions(text, corpus):
+def response_assertions(text, corpus, instruction=None):
     """Pull checkable specifics out of a candidate response.
 
     Reuses extract_facts.py's patterns rather than restating them, so the two stages
@@ -200,11 +200,43 @@ def response_assertions(text, corpus):
         # a marked span that is itself a number or a citation is already covered above
         if re.fullmatch(r'[\d\s.,-]+', inner):
             continue
+        # A MULTI-WORD marked span cannot be an entry_ROOT and must not be typed as one.
+        # It is emitted below as `quoted_lexical_item` instead, judged against the chunk
+        # text rather than against a table of bare triliteral roots.
+        #
+        # This was a real defect, not tidying. Measured: every classical entry_root fact
+        # is exactly 3 characters with no space, so a phrase could never match one and
+        # always came back UNSUPPORTED - and since a record takes the WORST of its
+        # assertions, that bogus assertion masked a correct PARTIAL from the same span.
+        # The morphology fix could not reach it either: there is no root to inflect.
+        #
+        # CLASSICAL ONLY. The dialect corpus's `entry_headword` values ARE frequently
+        # multi-word (`DIA_HEADWORD` allows up to 40 characters including spaces), and
+        # the abbreviation/extension cases depend on that - excluding phrases there broke
+        # four existing self-test cases, which is how this scoping was found.
+        if lex_type == 'entry_root' and len(inner.split()) > 1:
+            continue
         add(lex_type, inner)
 
     if corpus == 'saudi_dialect':
         for m in REGION_ATTRIB.finditer(text):
             add('region_claim', m.group(1))
+
+    # Quoted lexical items. The INSTRUCTION is read as well as the response, and
+    # that asymmetry is measured, not stylistic: of the 3,333 records the corpus
+    # rules found nothing in, 98% quote the item in the instruction and only 43%
+    # repeat it in the response. Response-only extraction is capped at 43% coverage
+    # by construction.
+    #
+    # The CLAIM is still the response's. The instruction merely names what the
+    # response is glossing; _judge() checks the response's own wording against the
+    # source around that item. An item taken from the instruction is never by itself
+    # evidence about the response.
+    for item in ef.quoted_lexical_items(text):
+        add('quoted_lexical_item', item)
+    if instruction:
+        for item in ef.quoted_lexical_items(instruction):
+            add('quoted_lexical_item', item)
 
     return out
 
@@ -244,6 +276,31 @@ def _token_run(big, small):
         if big[i:i + len(small)] == small:
             return i
     return -1
+
+
+# Gloss window around a located quoted item, in normalised characters. A dictionary
+# entry's explanation follows its headword, so the window reaches mostly forward; the
+# small backward reach catches a preposed gloss. 200/40 was the measured configuration
+# (84% local overlap vs 6% against an unrelated window) - widening it raises the local
+# rate and the unrelated rate together, which buys nothing.
+GLOSS_WINDOW, GLOSS_BACK = 200, 40
+
+# Function words carry no evidence: they appear in every Arabic sentence, so counting
+# them as shared content would make the overlap test fire on everything. Deliberately
+# short - a long hand-tuned stop list would be fitted to this one delivery.
+GLOSS_STOPWORDS = frozenset(norm_key(w) for w in (
+    'في من على عن الى هو هي هذا هذه ذلك التي الذي ما لا و او ان انه مع عند بعد قبل '
+    'كل بين لكن زي مثل يكون تكون صار يعني معنى معناها يقصدون القصد كان لما اللي شي '
+    'شيء واحد الناس نقول يقول قال').split())
+
+# 4+ letters: shorter Arabic tokens are overwhelmingly particles and pronouns.
+_CONTENT_WORD = re.compile(r'[ء-ي]{4,}')
+
+
+def _content_words(text):
+    """Content-word set of a text, normalised, stop-words removed."""
+    return {w for w in _CONTENT_WORD.findall(norm_key(text or ''))
+            if w not in GLOSS_STOPWORDS}
 
 
 # A bare root. Measured: every entry_root fact in the classical corpus is exactly 3
@@ -302,7 +359,8 @@ def _relation(resp_key, known_key):
     return None
 
 
-def _judge(assertion, by_type, region_ctx, chunk_tokens=None):
+def _judge(assertion, by_type, region_ctx, chunk_tokens=None,
+           chunk_text=None, response=None):
     """Verdict for one assertion against the chunk's facts of the same type."""
     a_type, a_val = assertion['type'], assertion['value']
     key = norm_key(a_val)
@@ -323,6 +381,52 @@ def _judge(assertion, by_type, region_ctx, chunk_tokens=None):
     for orig, k in zip(known, known_keys):
         if k == key:
             return SUPPORTED, 'exact match: %s' % orig
+
+    # ---------------------------------------- quoted_lexical_item: does the source say it,
+    #                                           and does the response gloss it plausibly?
+    #
+    # Not judged against the fact table at all - it is judged against the CHUNK TEXT,
+    # because the claim is "the source contains this span", and the table holds roots and
+    # authorities rather than arbitrary phrases.
+    #
+    # Two stages, and both are needed. Stage one asks whether the item exists in the
+    # source. Stage two asks whether the response's own wording overlaps what the source
+    # says AROUND that item. Stage one alone would mark 3,290 records as carrying a
+    # checkable claim that essentially always passes, which is worse than silence: it
+    # looks like verification and detects nothing but a fabricated headword.
+    #
+    # MEASURED, 2026-09-09, on 3,333 records:
+    #   item present in its own chunk            94%   (1% in a random other chunk)
+    #   multi-word item, own chunk               87%   (0% in a random other chunk)
+    #   response overlaps the local gloss window 84%   (6% against an unrelated window)
+    #
+    # PARTIAL on success, never SUPPORTED. 84/6 is real discrimination but it is far
+    # weaker than the morphology rule's 1% false-hit rate, and a single shared content
+    # word is thin evidence that a gloss is CORRECT. PARTIAL means "a human should look",
+    # which is what this measurement supports.
+    #
+    # الاقتباس موجود في المصدر، وشرحُه يتقاطع مع سياقه - وهذا يستدعي مراجعة، لا قبولًا.
+    if a_type == 'quoted_lexical_item':
+        if not chunk_text:
+            return (PARTIAL,
+                    'quoted item %r cannot be located: no chunk text supplied' % a_val)
+        nct, nkey = norm_key(chunk_text), key
+        pos = nct.find(nkey) if nkey else -1
+        if pos < 0:
+            return (UNSUPPORTED,
+                    'the source does not contain the quoted item %r' % a_val)
+        if not response:
+            return (PARTIAL, 'quoted item %r occurs in the source' % a_val)
+        window = nct[max(0, pos - GLOSS_BACK):pos + len(nkey) + GLOSS_WINDOW]
+        shared = _content_words(response) & _content_words(window)
+        if shared:
+            return (PARTIAL,
+                    'quoted item %r occurs in the source and the response shares %d '
+                    'content word(s) with the surrounding gloss - needs a human'
+                    % (a_val, len(shared)))
+        return (UNSUPPORTED,
+                'quoted item %r occurs in the source, but the response shares no content '
+                'word with what the source says around it' % a_val)
 
     # ------------------------------------------------ entry_root: morphology, not corruption
     #
@@ -415,7 +519,8 @@ def _judge(assertion, by_type, region_ctx, chunk_tokens=None):
     return UNSUPPORTED, 'no %s in chunk matches' % a_type
 
 
-def check_response(response, chunk_id, index, corpus, chunk_text=None):
+def check_response(response, chunk_id, index, corpus, chunk_text=None,
+                   instruction=None):
     row = index.get(chunk_id)
     if row is None:
         return {'source_chunk_id': chunk_id, 'verdict': 'UNKNOWN_CHUNK',
@@ -429,8 +534,9 @@ def check_response(response, chunk_id, index, corpus, chunk_text=None):
 
     chunk_tokens = set(norm_key(chunk_text).split()) if chunk_text else None
     results = []
-    for a in response_assertions(response, corpus):
-        verdict, why = _judge(a, by_type, region_ctx, chunk_tokens)
+    for a in response_assertions(response, corpus, instruction):
+        verdict, why = _judge(a, by_type, region_ctx, chunk_tokens,
+                              chunk_text=chunk_text, response=response)
         results.append({'type': a['type'], 'value': a['value'],
                         'verdict': verdict, 'reason': why})
 
@@ -611,6 +717,96 @@ def run_self_test():
     if _root_subsequence_hit('المططط', alien_roots + ['ططط'],
                              alien_keys + [norm_key('ططط')]) != 'ططط':
         print('  [FAIL] specificity pin suppressed a genuine root match'); ok = False
+
+    # ------------------------------------------- quoted_lexical_item (invented Arabic)
+    #
+    # All Arabic invented, as above. `ططط ظظظ` stands in for a quoted lexical phrase.
+    src_chunk = 'ططط ظظظ: عععع غغغغ ففففف. وقققق كككك.'
+    idx2 = {'q_c1': {'source_chunk_id': 'q_c1', 'source_region': 'classical',
+                     'extracted_facts': []}}
+
+    # the item exists AND the response overlaps the gloss around it -> PARTIAL
+    r = check_response('يعني "ططط ظظظ" هي عععع غغغغ.', 'q_c1', idx2,
+                       'classical_lexicon', chunk_text=src_chunk)
+    if r['verdict'] != PARTIAL:
+        print('  [FAIL] located item + gloss overlap -> %s, expected PARTIAL'
+              % r['verdict']); ok = False
+
+    # the item does NOT exist in the source -> UNSUPPORTED
+    r = check_response('يعني "خخخخ ذذذذ" هي عععع.', 'q_c1', idx2,
+                       'classical_lexicon', chunk_text=src_chunk)
+    if r['verdict'] != UNSUPPORTED:
+        print('  [FAIL] absent quoted item -> %s, expected UNSUPPORTED'
+              % r['verdict']); ok = False
+
+    # the item exists but the response shares NO content word with its gloss
+    r = check_response('يعني "ططط ظظظ" هي شششش تتتتت.', 'q_c1', idx2,
+                       'classical_lexicon', chunk_text=src_chunk)
+    if r['verdict'] != UNSUPPORTED:
+        print('  [FAIL] located item with no gloss overlap -> %s, expected UNSUPPORTED'
+              % r['verdict']); ok = False
+
+    # THE INSTRUCTION PATH: the item is quoted only in the question, which is the 98%
+    # case. Without instruction= the record must stay silent; with it, it must be judged.
+    resp = 'هي عععع غغغغ.'
+    r = check_response(resp, 'q_c1', idx2, 'classical_lexicon', chunk_text=src_chunk)
+    if r['verdict'] != 'NO_CHECKABLE_CLAIMS':
+        print('  [FAIL] response-only should find nothing here, got %s' % r['verdict'])
+        ok = False
+    r = check_response(resp, 'q_c1', idx2, 'classical_lexicon', chunk_text=src_chunk,
+                       instruction='وش معنى "ططط ظظظ"؟')
+    if r['verdict'] != PARTIAL:
+        print('  [FAIL] instruction-sourced item -> %s, expected PARTIAL' % r['verdict'])
+        ok = False
+
+    # BACKWARD COMPATIBILITY: instruction is optional and its absence must not raise.
+    try:
+        check_response('نص', 'q_c1', idx2, 'classical_lexicon')
+    except TypeError as exc:
+        print('  [FAIL] check_response is no longer callable without instruction: %s' % exc)
+        ok = False
+
+    # extraction shape
+    if ef.quoted_lexical_items('وش معنى "ططط ظظظ"؟') != ['ططط ظظظ']:
+        print('  [FAIL] double-quoted span not extracted'); ok = False
+    if ef.quoted_lexical_items("وش معنى 'ططط ظظظ'؟") != ['ططط ظظظ']:
+        print('  [FAIL] SINGLE-quoted span not extracted - this was the 53% case')
+        ok = False
+    if ef.quoted_lexical_items('وش معنى "ططط"؟'):
+        print('  [FAIL] single-token span extracted; min is %d Arabic tokens'
+              % ef.QUOTED_MIN_TOKENS); ok = False
+    if ef.quoted_lexical_items("قال '1426 هـ' في النص"):
+        print('  [FAIL] a quoted YEAR became a lexical item; years have their own types')
+        ok = False
+    if ef.quoted_lexical_items("it's a plain english don't"):
+        print('  [FAIL] a Latin apostrophe pair produced an Arabic lexical item')
+        ok = False
+
+    # SPECIFICITY / DISCRIMINATION PIN.
+    # MEASURED 2026-09-09 on the real intake: a multi-word quoted item appears in its own
+    # chunk 87% of the time and in a RANDOM OTHER chunk 0% of the time; single-token spans
+    # were 2%, which is why QUOTED_MIN_TOKENS is 2. This pins the shape of that result:
+    # multi-word items must not match unrelated sources. Lowering the minimum to 1, or
+    # matching on any shared token instead of the whole span, breaks this first.
+    unrelated = 'خخخخ ذذذذ: شششش تتتتت. ونننن مممم.'
+    idx3 = {'u_c1': {'source_chunk_id': 'u_c1', 'source_region': 'classical',
+                     'extracted_facts': []}}
+    for probe in ('ططط ظظظ', 'عععع غغغغ', 'وقققق كككك'):
+        rr = check_response('يعني "%s" شيء.' % probe, 'u_c1', idx3,
+                            'classical_lexicon', chunk_text=unrelated)
+        if rr['verdict'] != UNSUPPORTED:
+            print('  [FAIL] specificity: %r matched an unrelated chunk -> %s'
+                  % (probe, rr['verdict'])); ok = False
+    # ...and the same probes must still resolve against their OWN chunk
+    rr = check_response('يعني "ططط ظظظ" هي عععع.', 'q_c1', idx2,
+                        'classical_lexicon', chunk_text=src_chunk)
+    if rr['verdict'] != PARTIAL:
+        print('  [FAIL] specificity pin suppressed a genuine item match'); ok = False
+
+    # A quoted item must never reach SUPPORTED - 84%/6% does not justify it.
+    for a in rr.get('assertions', []):
+        if a['type'] == 'quoted_lexical_item' and a['verdict'] == SUPPORTED:
+            print('  [FAIL] quoted_lexical_item reached SUPPORTED'); ok = False
 
     print('passed: %s' % ok)
     return ok

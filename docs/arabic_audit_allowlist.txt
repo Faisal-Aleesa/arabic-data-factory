@@ -173,3 +173,14 @@
 
 # 4-word runs (1).
 لها أكثر من معنى
+
+# Title of a SECOND Najdi source, added to docs/license_manifest.csv 2026-09-09 as
+# dialect_dict_najdi_popular. It is flagged HELD_ONLY only because the held dialect
+# dictionary CITES this book nine times - dictionaries of the same dialect reference
+# each other - so the string is bibliographic metadata, not source content.
+#
+# Same precedent as 'أساس البلاغة' above: a work's TITLE has to be writable into the
+# manifest, or the manifest cannot do its job. Measured before allowlisting: only 4 of
+# 437 full glosses (1%) from that source appear verbatim in the held corpus, so the two
+# books are independent works, not copies.
+معجم الكلمات الشعبية في نجد

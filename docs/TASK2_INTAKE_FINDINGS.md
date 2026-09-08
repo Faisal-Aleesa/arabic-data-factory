@@ -202,7 +202,7 @@ hard-reject tier defensible. Two ways forward, and this is Task 2's call:
 
 **Do not read 4,143 rejections as 4,143 bad records.**
 
-### 3.2 `NO_CHECKABLE_CLAIMS` — 3,333 records (72%)
+### 3.2 `NO_CHECKABLE_CLAIMS` — 3,333 records (72%) — now 467, see §10
 
 `check_facts.py` found no checkable assertions in 72% of responses. This is a property of
 the checker meeting a kind of text it was not built for — see section 4 — not evidence
@@ -573,7 +573,8 @@ again.
    conversational text (section 4). This blocks §2.1 and §2.3 as well as §4 — with
    similarity off, `check_dpo.direction` is a pure function of these verdicts, so the
    defect propagates undiluted into the DPO results.
-2. **Assertion extraction for conversational text** in `extract_facts.py`. This is now the
+2. ~~**Assertion extraction for conversational text**~~ — **DONE for classical, §10**: NO_CHECKABLE_CLAIMS 3,333 → 467. Still unmeasured on dialect, and the 18% self-quoting artifact is an open refinement. Original note follows.
+   This was the
    BIGGER of the two gaps: it produces the 3,333 `NO_CHECKABLE_CLAIMS` and it keeps the
    similarity guard shut on 2,092 pairs (§9). The morphology fix did not touch it.
 3. **Similarity has now been run** at this scale (§9). It breaks 5.3% of ties and its own
@@ -710,7 +711,7 @@ byte identical before and after (2,137 and 2,212).
 | defect | module | status |
 |---|---|---|
 | assertions mis-judged (morphology) | `check_facts._relation()` | **FIXED** (§8) |
-| no assertions found in conversational paraphrase | `extract_facts.py` | **OPEN** |
+| no assertions found in conversational paraphrase | `extract_facts.py` | **CLOSED for classical** (§10); untested on dialect |
 
 The extractor gap is what blocks the similarity guard AND what produces the 3,333
 `NO_CHECKABLE_CLAIMS`. It is the larger of the two and is untouched.
@@ -729,6 +730,143 @@ Ties rose and inversions fell for the same reason: with contradictions collapsin
 REVIEW on both sides, more pairs land on identical verdicts. **AUTO_CONFIRM falling 30 → 2
 is correct, not a regression** — those confirmations rested on `FAIL_CONTRADICTED` on the
 rejected side, which the fix showed to be morphological false positives.
+
+
+---
+
+---
+
+## 10. The extraction fix — landed 2026-09-09
+
+§9 named `extract_facts.py` as the larger of the two open defects. This closes it for
+classical data.
+
+### What was wrong — structure, not pattern coverage
+
+Every classical chunk rule anchors on dictionary-entry SHAPE. `CLA_ROOT` is
+`^(root)\s*:` at a line start. A conversational answer never has that shape, so the
+extractor found nothing in 3,333 of 4,645 records — not because the content is
+unverifiable, but because it is verifiable in a different form.
+
+Measured over those 3,333:
+
+| feature | share |
+|---|---:|
+| quotes a lexical item (instruction **or** response) | **99%** |
+| quotes it in the **instruction** | 98% |
+| carries a definitional connective (`يعني`, `معناها`, `يقصدون`…) | 88% |
+| quotes it in the **response** | 43% |
+
+The shape is uniform: **the instruction quotes an item, the response glosses it.**
+`ما هي 'جهمة الليل'؟` → *the last part of the night, near dawn*.
+
+That 98/43 split forced an interface change. `check_response()` only ever received the
+response, which caps coverage at 43% by construction. It now takes an optional
+`instruction=None` — backward compatible, and a self-test pins that it stays callable
+without it.
+
+### Approaches considered, measured before building
+
+| approach | coverage | precision | cross-chunk false hit |
+|---|---:|---:|---:|
+| A. quoted span, response only | 43% | 90% | 2% |
+| **B. quoted span, instruction-preferred** | **99%** | **94%** | **1%** |
+| B′. B, multi-word spans only | — | 87% | **0%** |
+| **C. B + gloss overlap vs local chunk window** | **93%** | **84%** | 6% |
+| D. content-word overlap, no quotes | 100% | 43% | 11% |
+
+D was rejected: 43% against 11% is a ratio of roughly 4:1, versus about 94:1 for B. It
+would manufacture assertions rather than find them.
+
+B ships as the new fact type `quoted_lexical_item`; C ships as its judging rule. B alone
+would have marked 3,290 records as carrying a checkable claim that essentially always
+passes — worse than silence, because it looks like verification while detecting only a
+fabricated headword.
+
+**PARTIAL on success, never SUPPORTED.** 84%/6% is real discrimination but far weaker than
+the morphology rule's 1% false-hit rate, and one shared content word is thin evidence that
+a gloss is *correct*. A self-test asserts `quoted_lexical_item` can never reach SUPPORTED.
+
+### Measured effect
+
+| fact verdict | before §8 | after §8 (morphology) | after §10 (extraction) |
+|---|---:|---:|---:|
+| **NO_CHECKABLE_CLAIMS** | 3,333 | 3,333 | **467** |
+| PARTIAL | 147 | 852 | 3,140 |
+| UNSUPPORTED | 530 | 410 | 1,001 |
+| SUPPORTED | 44 | 44 | 32 |
+| CONTRADICTED | 591 | 6 | 5 |
+
+**NO_CHECKABLE_CLAIMS falls 3,333 → 467, an 86% reduction.** 6,391 `quoted_lexical_item`
+assertions were produced: 5,294 PARTIAL, 1,097 UNSUPPORTED.
+
+Record-level verdicts: REVIEW 4,173 · NO_FACT_COVERAGE 467 · FAIL_CONTRADICTED 5.
+
+### Manual validation — 16 of 18
+
+Fixed-seed random sample, 16 distinct chunks, read individually. Correctly located and
+glossed source idioms included `تأبط السيف`, `قرف العضاه`, `لهث الكلب`,
+`أصفقوا على أمر واحد` and `شيبتني قوارع القرآن`.
+
+**Two failures, both the same mechanism:** the model wrapped **its own paraphrase or a
+coined example** in quotes — `'تمييز الذهب منه وتخليصه'`, `'أفول النجوم'` — and the
+checker read it as a claim about the source. It is literally true that the source lacks
+the phrase, and it is not evidence of hallucination, because no such claim was made.
+
+### A double-extraction defect found by the self-test
+
+Multi-word quoted spans were being extracted **twice**: as `entry_root` by the existing
+`LEXICAL_MARKED` pattern, and as `quoted_lexical_item` by the new one. A record takes the
+WORST of its assertions, so the bogus `entry_root` UNSUPPORTED masked the correct PARTIAL
+from the very same span. Every classical `entry_root` fact is exactly 3 characters, so a
+phrase could never match one — and §8's morphology fix could not reach it either, because
+there is no root to inflect.
+
+The first fix was too broad and broke four existing self-test cases: the DIALECT corpus's
+`entry_headword` values ARE frequently multi-word (`DIA_HEADWORD` allows 40 characters
+including spaces). The exclusion is now scoped to `entry_root` only. Worth recording
+because the over-broad version passed a casual reading and only the existing cases caught
+it.
+
+### KNOWN LIMITATION — the self-quoting artifact (~18%)
+
+Measured across all 1,097 UNSUPPORTED `quoted_lexical_item` assertions:
+
+| where the quoted item appears | count | reading |
+|---|---:|---|
+| in the **instruction** | **905 (82%)** | a real claim the source does not support |
+| **only in the response** | **192 (18%)** | the model quoting its own wording |
+
+The extractor cannot tell "quoting the source" from "quoting my own paraphrase", because
+both are just quoted spans.
+
+**Proposed refinement, NOT built:** count an item as a source claim only if it is quoted in
+the instruction, or appears in the response BEFORE a definitional connective. That is a
+heuristic and it has **not been measured**, which is why it is not in the code — every
+threshold in this project that shipped before measurement had to be corrected afterwards.
+
+**Anyone reading the aggregate numbers should know this is a plausible near-term
+refinement, not a settled ceiling.** Applying it would likely move on the order of **192
+records from UNSUPPORTED toward REVIEW/PARTIAL**, so the 1,001 UNSUPPORTED figure above is
+an upper bound with a known, quantified soft edge.
+
+### CAVEAT — validated on CLASSICAL data only
+
+Every number in this section comes from `asas_albalagha` records. **There is nothing to
+test the dialect side against: Task 2 produced zero dialect records** (394/394 classical,
+0/337 dialect — §0).
+
+Two specific reasons the dialect side may behave differently:
+
+- **Quoting convention.** The 53% single-quote / 46% double-quote split, and the 99%
+  quoting rate, are properties of this generator's classical prompt. A dialect prompt may
+  quote less, or mark items with parentheses as the dialect CORPUS does.
+- **`entry_headword` is not `entry_root`.** Dialect headwords are frequently multi-word,
+  so the `entry_root` scoping above does not apply there, and a multi-word dialect span
+  may legitimately match a headword rather than needing the quoted-item path at all.
+
+**Re-measure coverage, precision and cross-chunk specificity on real dialect records
+before quoting any of these figures for the dialect half.**
 
 
 ---
