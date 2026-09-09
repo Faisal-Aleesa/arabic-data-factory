@@ -81,6 +81,7 @@ ARW = r'[' + AR + r']'
 CORPORA = {
     'saudi_dialect':     'data/processed/chunks.jsonl',
     'classical_lexicon': 'data/processed/chunks_asas_albalagha.jsonl',
+    'najdi_popular':     'data/processed/chunks_najdi_popular.jsonl',
 }
 
 
@@ -393,9 +394,88 @@ def citation_is_confident(value, freq):
     return freq.get(value, 0) >= 3
 
 
+# ------------------------------------------------------ profile: najdi_popular
+#
+# THIRD profile, added 2026-09-09 for معجم الكلمات الشعبية في نجد
+# (doc_id majam_alkalimat_alshaabia_najd, manifest row dialect_dict_najdi_popular).
+# Written rather than reusing either existing profile, per this module's own rule:
+# adding a corpus means measuring it and writing a profile, not picking whichever of
+# the other two looks closer. Both were measured against this source first:
+#
+#   pattern                     najdi_popular   held dialect   classical
+#   DIA_HEADWORD "(x) :"            0.0%           95.8%          0.0%
+#   CLA_ROOT     "^root:"         100.0%           75.4%        100.0%
+#
+# The dialect rule finds NOTHING here - this source has no parenthesised headwords.
+# The classical rule appears to fit at 100%, and that is the trap the module docstring
+# warns about. Sampling its 371 hits: مدوقع, صلوقعه, صفّاق, بنطّح, معراض - inflected
+# dialect words, not triliteral roots. Only 18% are even 3 characters, against 100%
+# in the classical corpus. It is wrong in both directions: CLA_ROOT excludes ^ال by
+# design, so it SKIPS the 74 of 473 headwords (16%) that carry the article while
+# capturing 399 others as fabricated "roots".
+#
+# The entry form here is simply `headword: gloss` at a line start, article allowed.
+# The pattern permits a multi-word headword; the data contains none (0 of 473). The
+# permission is left in because it costs nothing and the OCR could yield one, but the
+# 0% is recorded so a future multi-word hit reads as new behaviour, not as expected.
+#
+# VALIDATED AGAINST A COMPLETE ANSWER KEY, which neither other profile ever had.
+# data/processed/najdi_dictionary_final.json carries the OCR pipeline's own
+# headword/meaning split for all 473 entries, so recall and precision here are exact
+# rather than sampled: 473 hits, 100% recall, 100% precision, zero false positives,
+# zero missed headwords. run_self_test() pins that.
+#
+# NO YEAR RULES, for the same reason the classical profile has none. All 61 digit
+# runs in the corpus were checked: 25 are single digits, and every 3-4 digit run is
+# a page number the OCR mangled into mixed Arabic-Indic and ASCII (١74, ١١6, ٠90١,
+# ٠094). Zero carry a هـ/هجري marker. Running DIA_HIJRI/DIA_YEAR_ANY here would
+# manufacture 25 junk years out of scanning artifacts. run_self_test pins this.
+#
+# صيغة المدخل: كلمة ثم نقطتان ثم الشرح، في أول السطر.
+NAJ_ENTRY = re.compile(r'(?m)^[ \t]*([^:\n]{1,40}?)[ \t]*:[ \t]*([^\n]*)')
+
+# Glosses shorter than this are OCR noise or a dangling colon, not a definition.
+NAJ_MIN_GLOSS = 3
+
+
+def extract_najdi_popular(chunk_text):
+    """Headword + gloss pairs from the Najdi popular-words dictionary.
+
+    Emits `entry_headword` for the term and `gloss` for its definition.
+
+    `gloss` IS NOT CONSUMED BY check_facts TODAY. Nothing in the repo reads the type
+    (grepped, zero consumers outside this file): check_facts derives its assertions
+    from the RESPONSE side, and there is no gloss assertion extractor, so these 473
+    facts sit in the table inert. They are emitted anyway because the table is a
+    reference artifact, not a check_facts input - and because the gloss is the only
+    thing a paraphrase could ever be tested against, so the fix for that gap needs
+    them already present. Stated here rather than implied, so nobody reads a clean
+    najdi_popular fact run as evidence that glosses are being verified.
+
+    Page references reuse the dialect rule - this is the same kind of print source.
+    """
+    facts = []
+    for m in NAJ_ENTRY.finditer(chunk_text):
+        head, gloss = m.group(1).strip(), m.group(2).strip()
+        if not head or not re.search(ARW, head):
+            continue
+        _emit(facts, chunk_text, 'entry_headword', head, m.start(1))
+        if len(gloss) >= NAJ_MIN_GLOSS and re.search(ARW, gloss):
+            _emit(facts, chunk_text, 'gloss', gloss, m.start(2))
+    for m in DIA_PAGE_REF.finditer(chunk_text):
+        _emit(facts, chunk_text, 'page_reference', m.group(1), m.start(1))
+    # Second element is the apparatus-skipped count, same contract as the other two
+    # profiles. Measured as 0 across all 6 chunks: this source carries no footnote
+    # markers and no footnote definition lines at all (the OCR pipeline dropped the
+    # page furniture upstream), so there is nothing to skip and nothing being hidden
+    # by reporting zero.
+    return facts, 0
+
+
 PROFILES = {
     'saudi_dialect':     extract_saudi_dialect,
     'classical_lexicon': extract_classical_lexicon,
+    'najdi_popular':     extract_najdi_popular,
 }
 
 
@@ -479,6 +559,34 @@ SELF_TEST_CASES = [
      [('citation_authority', 'الأعشى')], []),
     # the dialect corpus's line-final ordinary words must not read as roots
     ('classical_lexicon', 'الحرمين: وما بعدها.', [], ['entry_root']),
+
+    # ------------------------------------------------------------- najdi_popular
+    ('najdi_popular', 'الغرب: هو الأداة المستعملة لرفع الماء.',
+     [('entry_headword', 'الغرب'), ('gloss', 'هو الأداة المستعملة لرفع الماء.')], []),
+    # the article is KEPT. CLA_ROOT excludes ^ال by design and would skip this
+    # entry entirely - 74 of the 473 headwords (16%) carry it.
+    # The gloss here is an invented placeholder. The natural-sounding definition
+    # written first turned out to occur verbatim in the rights-pending corpus, and
+    # audit_staged_arabic.py refused the commit - the fail-closed behaviour working
+    # as designed. The colliding phrase is deliberately not repeated in this comment.
+    ('najdi_popular', 'المعراض: ططط ظظظ.',
+     [('entry_headword', 'المعراض')], ['entry_root']),
+    # an inflected dialect word is a legitimate headword here. The same string is the
+    # shape CLA_ROOT misreads as a triliteral root - this profile must not emit one.
+    ('najdi_popular', 'مدوقع: منكسر.', [('entry_headword', 'مدوقع')], ['entry_root']),
+    # DISCRIMINATION: a colon with no Arabic head is not an entry. A digital clock or
+    # a bare ratio must produce nothing at all.
+    ('najdi_popular', '12:30 والوقت متأخر.', [], ['entry_headword', 'gloss']),
+    # DISCRIMINATION: a line with no colon is prose, not an entry.
+    ('najdi_popular', 'هذا سطر عادي بلا نقطتين.', [], ['entry_headword', 'gloss']),
+    # a gloss under NAJ_MIN_GLOSS is a dangling colon or OCR noise: keep the headword,
+    # drop the gloss, rather than emitting a one-character "definition".
+    ('najdi_popular', 'شبح: ا', [('entry_headword', 'شبح')], ['gloss']),
+    # a gloss with no Arabic at all is not a definition
+    ('najdi_popular', 'قلط: xyz', [('entry_headword', 'قلط')], ['gloss']),
+    ('najdi_popular', 'انظر ص 41 من الكتاب.', [('page_reference', '41')], []),
+    # the OTHER corpora's rules must stay out: no years, no figurative sense
+    ('najdi_popular', 'حول: سنة 1380 هـ.', [], ['hijri_year', 'figurative_sense']),
 ]
 
 
@@ -503,7 +611,56 @@ def run_self_test():
             if text[p:p + len(f['value'])] != f['value']:
                 print('  [FAIL] case %d: offset invariant broken for %r' % (i, f))
                 ok = False
+    ok = _self_test_najdi_answer_key() and ok
     print('passed: %s' % ok)
+    return ok
+
+
+def _self_test_najdi_answer_key():
+    """Pin the najdi_popular profile at 100% recall / 100% precision.
+
+    This is the only profile in the module validated against a COMPLETE answer key
+    rather than a sample: data/processed/najdi_dictionary_final.json carries the OCR
+    pipeline's own headword/meaning split for all 473 entries, and both it and the
+    chunks file are tracked, so this runs in any clone rather than only on the machine
+    that built it. Set equality both ways - a missed headword and a fabricated one are
+    different failures and the count alone would hide either.
+    """
+    # Resolved from __file__, not cwd: main() takes relative paths and assumes it is
+    # run from the repo root, but a self-test that only passes from one directory is
+    # a self-test that gets skipped.
+    repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    ck = os.path.join(repo, CORPORA['najdi_popular'])
+    key_path = os.path.join(repo, 'data/processed/najdi_dictionary_final.json')
+    if not (os.path.exists(ck) and os.path.exists(key_path)):
+        print('  [SKIP] najdi answer-key pin: inputs missing')
+        return True
+    with open(key_path, encoding='utf-8') as fh:
+        key = json.load(fh)
+    want_h = sorted(e['headword'].strip() for e in key)
+    want_g = sorted(e['meaning'].strip() for e in key)
+    got_h, got_g = [], []
+    with open(ck, encoding='utf-8') as fh:
+        for line in fh:
+            facts, _ = extract_najdi_popular(json.loads(line)['chunk_text'])
+            got_h += [f['value'] for f in facts if f['type'] == 'entry_headword']
+            got_g += [f['value'] for f in facts if f['type'] == 'gloss']
+    ok = True
+    for label, want, got in (('headword', want_h, sorted(got_h)),
+                             ('gloss', want_g, sorted(got_g))):
+        if want != got:
+            miss, extra = set(want) - set(got), set(got) - set(want)
+            print('  [FAIL] najdi %s answer key: %d expected, %d got, '
+                  '%d missed, %d fabricated' % (label, len(want), len(got),
+                                                len(miss), len(extra)))
+            for v in sorted(miss)[:3]:
+                print('           missed: %r' % v[:60])
+            for v in sorted(extra)[:3]:
+                print('           extra : %r' % v[:60])
+            ok = False
+    if ok:
+        print('  najdi answer key: %d/%d headwords, %d/%d glosses, 0 fabricated'
+              % (len(got_h), len(want_h), len(got_g), len(want_g)))
     return ok
 
 

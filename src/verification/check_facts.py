@@ -111,6 +111,7 @@ import extract_facts as ef                                    # noqa: E402
 FACTS = {
     'saudi_dialect':     'data/processed/facts_saudi_dialect.jsonl',
     'classical_lexicon': 'data/processed/facts_classical_lexicon.jsonl',
+    'najdi_popular':     'data/processed/facts_najdi_popular.jsonl',
 }
 FIXTURES = {
     'saudi_dialect':     'tests/fixtures/candidates_saudi_dialect.jsonl',

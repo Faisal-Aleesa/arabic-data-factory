@@ -1,0 +1,22 @@
+{
+  "corpus": "najdi_popular",
+  "input": "data/processed/chunks_najdi_popular.jsonl",
+  "output": "data/processed/facts_najdi_popular.jsonl",
+  "chunks_in": 6,
+  "chunks_with_facts": 6,
+  "chunks_without_facts": 0,
+  "coverage_pct": 100.0,
+  "facts_total": 947,
+  "facts_per_type": {
+    "entry_headword": 473,
+    "gloss": 473,
+    "page_reference": 1
+  },
+  "facts_per_region": {
+    "najdi": 947
+  },
+  "apparatus_skipped": 0,
+  "citation_review_queue": 0,
+  "citation_review_file": "docs/citation_review_najdi_popular.csv",
+  "empty_chunk_ids": []
+}

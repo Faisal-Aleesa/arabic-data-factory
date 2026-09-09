@@ -115,6 +115,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 CHUNKS = {
     'saudi_dialect':     'data/processed/chunks.jsonl',
     'classical_lexicon': 'data/processed/chunks_asas_albalagha.jsonl',
+    'najdi_popular':     'data/processed/chunks_najdi_popular.jsonl',
 }
 FIXTURES = {
     'saudi_dialect':     'tests/fixtures/candidates_saudi_dialect.jsonl',
