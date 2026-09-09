@@ -88,7 +88,26 @@ CHOSEN_ANSWER = 'answer'
 CHOSEN_FULL = 'full'
 
 # The generator's scaffold. Anchored at the start so a mid-text mention is not stripped.
+#
+# TWO SHAPES, not one. The full form carries a Thinking section and then an Answer
+# section; the short form is a bare "Answer:" header with no Thinking at all. The first
+# version of this module matched only the full form, so bare-header records passed
+# through with the header still attached.
+#
+# That was not a rare edge case. MEASURED on the 3,000 adapted pairs: 2,485 had the full
+# scaffold and the remaining 515 (17.2%) had the bare header - the two partition the file
+# exactly. So 515 `chosen` values shipped starting with "Answer:\n" while `rejected`
+# carried it in ZERO records, which is exactly the asymmetric-scaffold confound this
+# module exists to remove. A preference model could learn "prefer the text beginning with
+# Answer:" and score well without reading any Arabic.
+#
+# It also suppressed a measurement of itself. The residual 7-character prefix made those
+# 515 `chosen` values compare unequal to their byte-identical SFT `response` twins, so the
+# cross-file overlap read 2,485 of 3,000 (82.8%) when the true figure is 3,000 of 3,000
+# (100%). A stripping bug that also hides its own consequences is the worst kind, and it
+# is why run_self_test() now pins BOTH shapes rather than only the one that was written.
 _THINKING_RE = re.compile(r'^\s*Thinking\s*:\s*\n(.*?)\n\s*Answer\s*:\s*\n(.*)$', re.S)
+_ANSWER_ONLY_RE = re.compile(r'^\s*Answer\s*:\s*\n?(.*)$', re.S)
 
 
 def read_jsonl(path):
@@ -100,11 +119,20 @@ def read_jsonl(path):
 
 
 def split_scaffold(text):
-    """(thinking, answer) if the scaffold is present, else (None, text)."""
+    """(thinking, answer) if the scaffold is present, else (None, text).
+
+    The full Thinking/Answer form is tried first; failing that, a bare "Answer:" header
+    is stripped on its own and the thinking half comes back None, because there was none.
+    Both patterns are anchored at the start, so a mid-text mention of either word is left
+    alone - that distinction is pinned by run_self_test().
+    """
     m = _THINKING_RE.match(text or '')
-    if not m:
-        return None, text
-    return m.group(1).strip(), m.group(2).strip()
+    if m:
+        return m.group(1).strip(), m.group(2).strip()
+    m = _ANSWER_ONLY_RE.match(text or '')
+    if m:
+        return None, m.group(1).strip()
+    return None, text
 
 
 def collapse_messages(value):
@@ -196,7 +224,13 @@ def adapt_dpo_record(rec, parents, chosen_part=CHOSEN_ANSWER):
     for f in DPO_FIELDS:
         if not out[f]:
             problems.append('empty %s' % f)
-    return out, problems, (thinking is not None)
+    # "had a scaffold" must mean EITHER shape, not just the full Thinking/Answer one.
+    # `thinking is not None` was the old test, and it under-reported by exactly the 515
+    # bare-header records - the summary said 2,485 stripped when the true figure is
+    # 3,000. A counter that misses the same cases the stripper missed cannot reveal the
+    # bug, so it is derived from whether anything was actually removed.
+    had_scaffold = (thinking is not None) or (answer != (chosen_raw or '').strip())
+    return out, problems, had_scaffold
 
 
 def load_parents(sft_path):
@@ -301,6 +335,26 @@ def run_self_test():
     mid = 'الجواب هو كذا. Thinking:\nليس سقالة\n\nAnswer:\nولا هذا'
     if split_scaffold(mid)[0] is not None:
         print('  [FAIL] mid-text "Thinking:" was treated as a scaffold'); ok = False
+
+    # THE BARE "Answer:" HEADER, with no Thinking section. This is the shape the first
+    # version of this module missed, and it was 515 of 3,000 real records (17.2%) - not
+    # an edge case. It left an asymmetric scaffold token on `chosen` that `rejected`
+    # never had, which is the exact confound this module removes.
+    for variant in ('Answer:\nالجواب هنا.',
+                    'Answer:  \nالجواب هنا.',
+                    '  Answer:\n\nالجواب هنا.',
+                    'Answer:الجواب هنا.'):
+        th, ans = split_scaffold(variant)
+        if th is not None or ans != 'الجواب هنا.':
+            print('  [FAIL] bare Answer header %r -> %r / %r' % (variant, th, ans))
+            ok = False
+    # ... and the anchor still holds for the bare form: a mid-text "Answer:" stays put
+    mid_answer = 'الجواب هو كذا. Answer:\nولا هذا'
+    if split_scaffold(mid_answer)[1] != mid_answer:
+        print('  [FAIL] mid-text "Answer:" was stripped'); ok = False
+    # nothing that merely CONTAINS the word may trigger it
+    if split_scaffold('Answers:\nكذا')[1] != 'Answers:\nكذا':
+        print('  [FAIL] "Answers:" was treated as the scaffold header'); ok = False
 
     # --- DPO adaptation ------------------------------------------------------------
     parents = {'x_c0001_sft_001': sft_rec}

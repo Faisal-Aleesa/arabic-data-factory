@@ -32,8 +32,8 @@
       },
       "chosen": {
         "records": 3000,
-        "degenerate_texts": 0,
-        "degenerate_pct": 0.0
+        "degenerate_texts": 1,
+        "degenerate_pct": 0.03
       },
       "rejected": {
         "records": 3000,
@@ -188,6 +188,19 @@
       {
         "code": "PAIR_COLLAPSE",
         "field": "chosen|rejected",
+        "index": 1980,
+        "jaccard": 0.8182,
+        "identical": false,
+        "rejection_type": "partial_factual_errors",
+        "chunk_id": "asas_albalagha_c0169",
+        "text": [
+          "نقول عن الكلب 'سلوقي' إذا كان منسوب لقرية اسمها 'سلوق' في اليمن.",
+          "نقول عن الكلب 'سلوقي' إذا كان منسوب لقرية اسمها 'سلوق' في الحجاز."
+        ]
+      },
+      {
+        "code": "PAIR_COLLAPSE",
+        "field": "chosen|rejected",
         "index": 2011,
         "jaccard": 0.9,
         "identical": false,
@@ -254,12 +267,12 @@
         "code": "PAIR_COLLAPSE",
         "field": "chosen|rejected",
         "index": 2843,
-        "jaccard": 0.8462,
+        "jaccard": 0.88,
         "identical": false,
         "rejection_type": "partial_factual_errors",
         "chunk_id": "asas_albalagha_c0242",
         "text": [
-          "Answer: يقولون 'فلان عميد' إذا كان مريض مرة وما يقدر يجلس إلا إذا سندوه بالوسائد. بعدين توسع المعنى وصار يشمل القلب المر",
+          "يقولون 'فلان عميد' إذا كان مريض مرة وما يقدر يجلس إلا إذا سندوه بالوسائد. بعدين توسع المعنى وصار يشمل القلب المريض أو ال",
           "يقولون 'فلان عميد' إذا كان مريض مرة وما يقدر يجلس إلا إذا سندوه بالوسائد. بعدين توسع المعنى وصار يشمل القلب المريض أو ال"
         ]
       },
@@ -290,7 +303,7 @@
         ]
       }
     ],
-    "findings_total": 19,
+    "findings_total": 20,
     "findings_truncated": 0
   },
   "pair_similarity": {
@@ -300,14 +313,14 @@
     "at_or_above": {
       "0.95": 2,
       "0.9": 5,
-      "0.8": 19,
+      "0.8": 20,
       "0.7": 70,
-      "0.6": 149
+      "0.6": 152
     }
   },
   "cross_file": {
-    "dpo_chosen_also_an_sft_response": 2485,
-    "pct_of_dpo": 82.83
+    "dpo_chosen_also_an_sft_response": 3000,
+    "pct_of_dpo": 100.0
   },
   "cross_file_findings": [
     {
@@ -393,6 +406,13 @@
       "dpo_index": 11,
       "sft_index": 11,
       "chunk_id": "asas_albalagha_c0000"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 12,
+      "sft_index": 12,
+      "chunk_id": "asas_albalagha_c0001"
     },
     {
       "code": "CROSS_FILE",
@@ -652,24 +672,17 @@
       "dpo_index": 49,
       "sft_index": 49,
       "chunk_id": "asas_albalagha_c0004"
-    },
-    {
-      "code": "CROSS_FILE",
-      "field": "dpo.chosen==sft.response",
-      "dpo_index": 50,
-      "sft_index": 50,
-      "chunk_id": "asas_albalagha_c0004"
     }
   ],
   "counts": {
-    "PAIR_COLLAPSE": 19,
-    "CROSS_FILE": 2485
+    "PAIR_COLLAPSE": 20,
+    "CROSS_FILE": 3000
   },
   "inputs": {
     "sft": "data/adapted/sft_task2.jsonl",
     "dpo": "data/adapted/dpo_task2.jsonl"
   },
-  "cross_file_findings_total": 2485,
-  "cross_file_findings_truncated": 2435,
+  "cross_file_findings_total": 3000,
+  "cross_file_findings_truncated": 2950,
   "report_sample_limit": 50
 }

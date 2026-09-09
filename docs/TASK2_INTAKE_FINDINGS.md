@@ -840,15 +840,61 @@ Measured across all 1,097 UNSUPPORTED `quoted_lexical_item` assertions:
 The extractor cannot tell "quoting the source" from "quoting my own paraphrase", because
 both are just quoted spans.
 
-**Proposed refinement, NOT built:** count an item as a source claim only if it is quoted in
-the instruction, or appears in the response BEFORE a definitional connective. That is a
-heuristic and it has **not been measured**, which is why it is not in the code — every
-threshold in this project that shipped before measurement had to be corrected afterwards.
+**BUILT AND MEASURED 2026-09-09.** It is now `is_self_quote()` in `check_facts.py`.
+Reading the 190 by hand first showed the table above is too clean: they are **not**
+uniformly self-quotes. Genuine source claims sit among them — a hadith quotation, and the
+construction "the man is-described-as X" — so the 18% was never a pure
+artifact rate. (The Arabic is paraphrased here rather than quoted: the verbatim
+phrasing occurs in the rights-pending corpus and the licence audit refuses it.)
 
-**Anyone reading the aggregate numbers should know this is a plausible near-term
-refinement, not a settled ceiling.** Applying it would likely move on the order of **192
-records from UNSUPPORTED toward REVIEW/PARTIAL**, so the 1,001 UNSUPPORTED figure above is
-an upper bound with a known, quantified soft edge.
+The rule as finally built. An item is a SOURCE CLAIM (verdict unchanged) when **any** of:
+- it is quoted in the instruction, or
+- the instruction quotes nothing at all, or
+- the response contains no definitional connective, or
+- it occurs BEFORE the first connective.
+
+Otherwise it is the model's own wording and softens to **PARTIAL**, never to SUPPORTED.
+
+**The third condition was not in the proposal and is load-bearing.** Without it the rule
+broke three existing specificity pins. The probe `يعني "خخخخ ذذذذ" هي عععع.` is
+positionally *identical* to the real self-quote `يقصدون 'ما رأتك عيني منذ زمان'` —
+connective at position 0, quoted span immediately after — and the two have opposite
+ground truth. What separates them is that the real case has an instruction quoting the
+source term, making the response's different span visibly a gloss. No instruction means
+no evidence, and no evidence keeps the harsher verdict.
+
+**Validated twice, and the second time on held-out data.** A 34-case hand-labelled sample
+scored 88.9% precision / 91.7% recall and every one of its five misses was a coined
+example introduced by a comparison marker (`زي`, `مثل`). Adding those markers fixed all
+five — but that measurement was then fitted to the sample that diagnosed it, so the rule
+was re-validated on a **fresh disjoint 22-case sample**:
+
+| | precision | recall |
+|---|---:|---:|
+| as originally proposed, fitted sample | 88.9% | 91.7% |
+| as built, **held-out sample** | **100%** | **81.8%** |
+
+The instruction precondition trades recall for precision, which is the right direction
+here: a false positive softens a *real* hallucination and hides it, while a false negative
+merely leaves a reviewable UNSUPPORTED.
+
+**Measured effect on the delivery**, not estimated:
+
+| | before | after |
+|---|---:|---:|
+| `quoted_lexical_item` UNSUPPORTED assertions | 1,097 | **998** |
+| record-level UNSUPPORTED | 1,001 | **944** |
+
+99 assertions softened, moving 57 records. The original estimate of "on the order of 192"
+was roughly double the real figure.
+
+**Known limitations.** The connective is searched anywhere in the response, so an
+unrelated earlier clause can trigger it — that is the single held-out false positive
+(`زي الأكل والشرب` in a clause unconnected to the quoted item). Scoping the search to the
+item's own sentence would probably fix it and is **not built**, because it is unmeasured.
+The rule also only applies where the instruction quotes something, which is **79.7% of
+these instructions** (3,703 of 4,645); on the rest it silently does nothing, and that
+failure is safe by design.
 
 ### CAVEAT — validated on CLASSICAL data only
 
@@ -906,20 +952,50 @@ pairs** — not from fixtures.
 |---|---|
 | `EXACT_DUP` — byte-identical after whitespace collapse, any field | **0** |
 | `NEAR_DUP` — Jaccard ≥ 0.80 within a field | **0** |
-| `PAIR_COLLAPSE` — `rejected` is a near-copy of its own `chosen` | **19** |
-| `CROSS_FILE` — DPO `chosen` is also an SFT `response` | **2,485 (82.8%)** |
+| `PAIR_COLLAPSE` — `rejected` is a near-copy of its own `chosen` | **20** (2 real, see below) |
+| `CROSS_FILE` — DPO `chosen` is also an SFT `response` | **3,000 (100%)** |
 
 Zero exact and zero near duplicates across all five text fields. That is a genuinely
 clean result, and it was checked rather than assumed: the maximum pairwise Jaccard among
 all 4,645 SFT responses is **0.385**, so nothing sits anywhere near the threshold, and an
 injected copy is still caught (self-test case 2–3).
 
-**The 19 `PAIR_COLLAPSE` findings are a real defect.** These are DPO pairs whose two
-sides say the same thing, so the pair carries no preference signal at all. **2 of them
-are byte-identical** — `chosen` and `rejected` are literally the same string. All 19 are
-`rejection_type: partial_factual_errors`, which is 1% of that type. No per-field scan
-finds these: both texts are unique in the corpus, and only comparing the two sides of the
-same record exposes it.
+**CORRECTED 2026-09-09 — the first version of this section over-claimed.** It said all
+19 pairs "carry no preference signal at all". That is true of 2 of them and **wrong about
+the other 17**. High lexical overlap is not the same as absence of signal, and a Jaccard
+threshold cannot tell "the two sides say the same thing" from "one word changed and the
+meaning inverted".
+
+The count is now **20** rather than 19 (the adapter fix in §12 unmasked one more), and
+the word-level diff decomposes them cleanly:
+
+| | count | reading |
+|---|---:|---|
+| byte-identical `chosen` and `rejected` | **2** | zero preference signal — **real defects** |
+| exactly one edited region | **18** | valid `partial_factual_errors` pairs |
+
+The 18 are single-token factual substitutions, which is precisely what that rejection
+type is supposed to produce:
+
+| chosen → rejected | |
+|---|---|
+| `نهايته` → `بدايته` | its end → its beginning |
+| `الدرهمين` → `الريالين` | two dirhams → two riyals |
+| `واليمن` → `والشام` | Yemen → the Levant |
+| `الكبير الواسع` → `الصغير` | the large and wide → the small |
+| `الناقة الشابة` → `الجمل الصغير` | the young she-camel → the small camel |
+
+Minimal edit, inverted meaning. That is **high-quality preference data** — arguably the
+most valuable kind, because it forces the model to attend to the fact rather than the
+style. Reading them as defects would have been an argument for regenerating good data.
+
+All 20 are `rejection_type: partial_factual_errors`, `dictionary_entry`, `classical`, one
+model version, spread across 16 distinct chunks at file positions 29 to 2917 — so not a
+contiguous batch failure.
+
+**`PAIR_COLLAPSE` is therefore a triage signal, not a defect count.** It has a ~10% true
+defect rate on this delivery. Only comparing the two sides of one record surfaces these
+at all, which is still worth doing — but the finding must be read per-pair.
 
 Full distribution of `jaccard(chosen, rejected)`: median 0.067, p90 0.407, max 1.000.
 
@@ -934,7 +1010,8 @@ Full distribution of `jaccard(chosen, rejected)`: median 0.067, p90 0.407, max 1
 The distribution is included because 0.80 is a threshold to argue with, not a fact. The
 70 pairs at ≥ 0.70 are a weak training signal even though they are not reported.
 
-**Ask for Task 2:** regenerate the 19 collapsed pairs, starting with the 2 identical ones.
+**Ask for Task 2:** regenerate the **2 byte-identical pairs** (file indices 45 and 1540).
+The other 18 need no action — they are good preference data.
 
 ### 11.2 The one parameter that had to change, and why
 
@@ -988,8 +1065,12 @@ exit 1 — FAIL
 
 Of the 6,002 crossings, **2,983 involve text of 10 or more tokens**, so they cannot be
 dismissed as short generic phrases (828 are ≤ 4 tokens and probably can be). This is the
-82.8% cross-file overlap from §11.1 doing exactly what it threatens: the same sentence
-lands in train and test while the document rule is still satisfied on paper.
+cross-file overlap from §11.1 doing exactly what it threatens: the same sentence lands in
+train and test while the document rule is still satisfied on paper.
+
+Those counts were measured before the §12 adapter fix, when the overlap read 82.8%. The
+true overlap is **100%**, so the crossing count is a floor, not a ceiling. The verdict —
+exit 1, FAIL — does not change, and the finding is strictly stronger.
 
 **The document check alone would not catch this**, which is why the text check exists.
 
@@ -1014,7 +1095,16 @@ This is the checker paying for itself on day one: the mismatch was invisible to 
 other check in the repo, and would have surfaced as a licence-tracking gap only once
 records began deriving from that corpus.
 
-### 11.6 What is NOT verified
+### 11.6 A correction that changed two of the numbers above
+
+Sections 11.1 and 11.4 originally reported the cross-file overlap as **2,485 of 3,000
+(82.8%)**. The true figure is **3,000 of 3,000 (100%)** — every DPO `chosen` is an SFT
+`response`. The 515 that looked distinct were masked by a seven-character `Answer:`
+prefix our own adapter failed to strip; see §12. This makes the leakage finding stronger,
+not weaker: splitting the SFT and DPO files independently leaks **every single pair**,
+not most of them.
+
+### 11.7 What is NOT verified
 
 - No partition check has been performed on real partitions, because none exist. §11.4 is
   a deliberately constructed failing case, not a released split.
@@ -1044,3 +1134,72 @@ python src/verification/check_duplication.py
 python src/verification/check_leakage.py --self-test
 python src/verification/check_leakage.py            # feasibility; exits 2 by design
 ```
+
+---
+
+## 12. URGENT, and it was OURS — the adapter left 17.2% of the scaffold in place
+
+**Fixed 2026-09-09.** This is a defect in `src/verification/adapt_task2.py`, not in
+Task 2's output. It is recorded here because it corrupted numbers this document reported
+to Task 2, and because it is a live instance of the §1 scaffold confound that the adapter
+exists to remove.
+
+### What was wrong
+
+The scaffold has **two** shapes. The full form is `Thinking:\n...\n\nAnswer:\n...`; the
+short form is a bare `Answer:` header with no Thinking section. The stripping pattern
+required `Thinking:` to be present, so bare-header records passed through untouched.
+
+The two shapes partition the file exactly:
+
+| shape | records | stripped before the fix? |
+|---|---:|---|
+| full `Thinking:` + `Answer:` | 2,485 | yes |
+| bare `Answer:` header | **515 (17.2%)** | **no** |
+| total | 3,000 | |
+
+So 515 `chosen` values shipped beginning with `Answer:\n` while `rejected` carried that
+token in **zero** records. That is exactly the asymmetry §1 flags as making DPO
+unmeasurable: a preference model can learn "prefer the text starting with `Answer:`" and
+score well without reading any Arabic. Our mitigation for the confound was itself
+reproducing it, at a sixth of the corpus.
+
+### It also hid its own consequences
+
+The residual seven-character prefix made those 515 `chosen` values compare unequal to
+their byte-identical SFT `response` twins:
+
+| | measured | true |
+|---|---:|---:|
+| DPO `chosen` that is also an SFT `response` | 2,485 (82.8%) | **3,000 (100%)** |
+
+All 515 match once the prefix is removed. **Every DPO `chosen` is an SFT `response`** —
+so splitting the two files independently leaks every pair, not 83% of them.
+
+A stripping bug that also suppresses the measurement of itself is the worst shape this
+class of defect takes, and it is why `run_self_test()` now pins **both** scaffold shapes,
+four whitespace variants of the bare header, and two discrimination cases (a mid-text
+`Answer:` and the word `Answers:`) that must **not** be stripped.
+
+### A counter that could not reveal the bug
+
+`scaffold_in_chosen` was derived from `thinking is not None`, so it under-reported by
+exactly the 515 bare-header records — the summary said 2,485 stripped when the true figure
+is 3,000. A counter that misses the same cases the stripper misses cannot expose the
+stripper. It is now derived from whether anything was actually removed.
+
+### What changed downstream
+
+| measurement | before | after |
+|---|---:|---:|
+| `CROSS_FILE` overlap | 2,485 (82.8%) | **3,000 (100%)** |
+| `PAIR_COLLAPSE` | 19 | **20** |
+| `quoted_lexical_item` verdicts | unchanged | unchanged |
+| leakage: splittable units | 1 | 1 |
+
+`quoted_lexical_item` is unaffected because the residual prefix only ever sat on DPO
+`chosen`, and that check runs on SFT `response` values. The leakage conclusion is
+unchanged and strictly stronger.
+
+**Task 2 needs to know the corrected overlap figure**, since it raises the urgency of the
+§1 scaffold issue rather than lowering it.

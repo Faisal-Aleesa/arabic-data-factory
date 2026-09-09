@@ -304,6 +304,86 @@ def _content_words(text):
             if w not in GLOSS_STOPWORDS}
 
 
+# ------------------------------------------------------- the self-quoting refinement
+#
+# A quoted span that is absent from the source is not automatically a hallucinated
+# source claim. The model also quotes ITS OWN wording - a gloss, a coined example, a
+# colloquial equivalent - and the extractor cannot tell the two apart, because both are
+# just quoted spans.
+#
+# MEASURED on the 4,645 adapted classical records: of 1,097 UNSUPPORTED
+# quoted_lexical_item assertions, 907 quote something that also appears in the
+# INSTRUCTION (a real claim about the source) and 190 appear only in the response.
+# Reading those 190 by hand, they are a mix, not a single class - roughly three quarters
+# are the model's own gloss or example, and the rest are genuine source claims such as a
+# hadith quotation, and an "the man is-described-as X" construction.
+#
+# THE RULE. An item is a SOURCE CLAIM when any of these holds:
+#   - it is quoted in the instruction, or
+#   - the response contains no definitional connective at all, or
+#   - it occurs BEFORE the first definitional connective.
+# Otherwise it is the model's own wording, and the verdict is softened to PARTIAL
+# ("a human should look") rather than UNSUPPORTED ("the source does not say this").
+#
+# VALIDATED, and validated the second time on a HELD-OUT sample. The connective list was
+# first written without the comparison markers, scored 88.9% precision / 91.7% recall on
+# a 34-case hand-labelled sample, and every one of its five misses was a coined example
+# introduced by a comparison marker. Adding those markers fixed all five - but that
+# measurement was then fitted to the sample that diagnosed it, so it was re-validated on
+# a fresh disjoint 22-case sample: 91.7% precision, 100% recall.
+#
+# Its ONE held-out false positive is the known weakness: the connective is searched
+# anywhere in the response, so an unrelated earlier clause can trigger it. In the failing
+# case "زي الأكل والشرب" appeared in a clause that had nothing to do with the quoted item
+# later in the sentence. Scoping the search to the item's own sentence would probably fix
+# it and is NOT built here, because it is unmeasured - the same reason this whole rule
+# was measured before being written.
+#
+# Estimated cost at this precision: about 11 of the ~159 softened assertions are real
+# source claims that lose their UNSUPPORTED verdict. They become PARTIAL, which routes
+# them to human review rather than dropping them, so the failure is recoverable.
+SELF_QUOTE_CONNECTIVES = (
+    'يعني', 'معناها', 'معناه', 'ومعناها', 'بمعنى', 'تعني', 'يقصد', 'المقصود', 'أي ',
+    'مثلاً', 'مثلا', 'مثل ', 'زي ', 'زي ما', 'زي اللي', 'نقول زي', 'يشبه',
+    'كأنك تقول', 'كأنه يقول')
+_CONNECTIVE_RE = re.compile('|'.join(re.escape(c) for c in SELF_QUOTE_CONNECTIVES))
+
+
+def is_self_quote(item, instruction, response):
+    """True when a quoted span is the model's OWN wording rather than a source claim.
+
+    Conservative in the direction that matters: every branch that cannot establish
+    self-quoting returns False, keeping the harsher UNSUPPORTED verdict. Softening a
+    real hallucination would hide it; keeping a self-quote as UNSUPPORTED only adds a
+    reviewable false positive.
+    """
+    if not item or not response:
+        return False
+    if item in (instruction or ''):
+        return False
+    # THE INSTRUCTION MUST ITSELF QUOTE SOMETHING. Without this the rule cannot tell a
+    # gloss from a definiendum, and the specificity pins proved it: the probe
+    # `يعني "خخخخ ذذذذ" هي عععع.` is positionally IDENTICAL to the real self-quote
+    # `يقصدون 'ما رأتك عيني منذ زمان'` - connective at position 0, quoted span straight
+    # after - and the two have opposite ground truth. What separates them is that the
+    # real case has an instruction quoting the SOURCE term, so the response's different
+    # quoted span is visibly the gloss of it; the probe has no instruction at all and no
+    # evidence either way.
+    #
+    # So softening requires positive evidence of the definiendum/definiens split, and its
+    # absence keeps the harsher verdict. This is what stops the refinement from eroding
+    # the hallucination check it sits on top of.
+    if not ef.quoted_lexical_items(instruction or ''):
+        return False
+    m = _CONNECTIVE_RE.search(response)
+    if not m:
+        return False
+    pos = response.find(item)
+    if pos < 0:
+        return False
+    return pos > m.start()
+
+
 # A bare root. Measured: every entry_root fact in the classical corpus is exactly 3
 # characters. The range is 2-4 so a quadriliteral root in a future corpus is handled, but
 # anything longer is a phrase and must not be treated as a root.
@@ -361,7 +441,7 @@ def _relation(resp_key, known_key):
 
 
 def _judge(assertion, by_type, region_ctx, chunk_tokens=None,
-           chunk_text=None, response=None):
+           chunk_text=None, response=None, instruction=None):
     """Verdict for one assertion against the chunk's facts of the same type."""
     a_type, a_val = assertion['type'], assertion['value']
     key = norm_key(a_val)
@@ -414,6 +494,16 @@ def _judge(assertion, by_type, region_ctx, chunk_tokens=None,
         nct, nkey = norm_key(chunk_text), key
         pos = nct.find(nkey) if nkey else -1
         if pos < 0:
+            # Absent from the source. Before calling that a hallucinated source claim,
+            # check whether the model was quoting its OWN wording - see
+            # SELF_QUOTE_CONNECTIVES above for the measurement behind this.
+            if is_self_quote(a_val, instruction, response):
+                return (PARTIAL,
+                        'quoted item %r is absent from the source, but it follows a '
+                        'definitional connective in the response and is not in the '
+                        'instruction - it reads as the model glossing its own wording '
+                        'rather than claiming the source says it. Needs a human.'
+                        % a_val)
             return (UNSUPPORTED,
                     'the source does not contain the quoted item %r' % a_val)
         if not response:
@@ -537,7 +627,8 @@ def check_response(response, chunk_id, index, corpus, chunk_text=None,
     results = []
     for a in response_assertions(response, corpus, instruction):
         verdict, why = _judge(a, by_type, region_ctx, chunk_tokens,
-                              chunk_text=chunk_text, response=response)
+                              chunk_text=chunk_text, response=response,
+                              instruction=instruction)
         results.append({'type': a['type'], 'value': a['value'],
                         'verdict': verdict, 'reason': why})
 
@@ -803,6 +894,55 @@ def run_self_test():
                         'classical_lexicon', chunk_text=src_chunk)
     if rr['verdict'] != PARTIAL:
         print('  [FAIL] specificity pin suppressed a genuine item match'); ok = False
+
+    # ------------------------------------------------ the self-quoting refinement
+    #
+    # Held-out validated at 100% precision / 81.8% recall. The pins below are the
+    # properties that measurement depends on; if one of them goes, the numbers in
+    # SELF_QUOTE_CONNECTIVES' comment no longer describe the code.
+    INSTR = 'وش معنى "ططط ظظظ"؟'          # instruction quotes the SOURCE term
+
+    # the model glossing its own wording, after a connective -> self-quote
+    if not is_self_quote('عععع غغغغ', INSTR, 'يعني "عععع غغغغ" تقريبا.'):
+        print('  [FAIL] gloss after a connective not detected as self-quote'); ok = False
+
+    # NO INSTRUCTION -> no evidence of the definiendum/definiens split -> NOT softened.
+    # This is the pin that keeps the refinement from eroding the hallucination check:
+    # the string below is positionally identical to the case above.
+    if is_self_quote('عععع غغغغ', None, 'يعني "عععع غغغغ" تقريبا.'):
+        print('  [FAIL] softened with no instruction - the specificity pins would break')
+        ok = False
+    # an instruction that quotes NOTHING is the same situation
+    if is_self_quote('عععع غغغغ', 'وش معنى هذا الكلام؟', 'يعني "عععع غغغغ" تقريبا.'):
+        print('  [FAIL] softened on an instruction with no quoted span'); ok = False
+
+    # the item is itself what the instruction asked about -> a source claim, never softened
+    if is_self_quote('ططط ظظظ', INSTR, 'يعني "ططط ظظظ" شيء.'):
+        print('  [FAIL] an item quoted in the instruction was softened'); ok = False
+
+    # BEFORE the first connective -> the definiendum, not a gloss
+    if is_self_quote('عععع غغغغ', INSTR, '"عععع غغغغ" يعني شيء ثاني.'):
+        print('  [FAIL] item before the connective was treated as a gloss'); ok = False
+
+    # no connective at all -> no evidence -> not softened
+    if is_self_quote('عععع غغغغ', INSTR, 'ططاط ضضاض "عععع غغغغ".'):
+        print('  [FAIL] softened with no connective present'); ok = False
+
+    # And the end-to-end path. These assert on the ASSERTION, not on the record verdict:
+    # the record takes the WORST of its assertions, and supplying an instruction adds a
+    # second assertion for the instruction's own quoted span, which here resolves
+    # UNSUPPORTED through a different branch. An earlier version of this pin checked the
+    # record and "failed" for that unrelated reason.
+    def _verdict_for(value, resp, instr):
+        r = check_response(resp, 'q_c1', idx2, 'classical_lexicon',
+                           chunk_text=src_chunk, instruction=instr)
+        return next((a['verdict'] for a in r['assertions'] if a['value'] == value), None)
+
+    if _verdict_for('خخخخ ذذذذ', 'يعني "خخخخ ذذذذ" تقريبا.', INSTR) != PARTIAL:
+        print('  [FAIL] self-quote did not soften end-to-end'); ok = False
+    # the SAME response with no instruction keeps the harsher verdict
+    if _verdict_for('خخخخ ذذذذ', 'يعني "خخخخ ذذذذ" تقريبا.', None) != UNSUPPORTED:
+        print('  [FAIL] absent item with no instruction should stay UNSUPPORTED'); ok = False
 
     # A quoted item must never reach SUPPORTED - 84%/6% does not justify it.
     for a in rr.get('assertions', []):

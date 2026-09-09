@@ -211,3 +211,32 @@
 الثور أو البقرة
 قطعة من العجين
 نداء من الزوج لزوجته
+
+# ---------------------------------------------------------------------------------
+# Colloquial DEFINITIONAL CONNECTIVES, from check_facts.SELF_QUOTE_CONNECTIVES
+# (added 2026-09-09).
+#
+# These are the self-quoting refinement's feature vocabulary, not source content. The
+# rule works by finding where a model stops asserting what the source says and starts
+# glossing in its own words, and these are the markers of that boundary. They cannot be
+# paraphrased away the way ordinary prose can: the module has to contain the literal
+# strings in order to search for them.
+#
+# TRIAGE, measured against the held corpus before allowlisting:
+#     زي ما      3 occurrences     "like what / as"
+#     زي اللي    5 occurrences     "like the one who"
+#     كأنه يقول  2 occurrences     "as if he says"
+# All three are function-word sequences of general Saudi colloquial Arabic, carrying no
+# lexicographic content: they are in the held corpus for the same reason "in the" is in
+# every English book. The other 16 connectives in that tuple did not flag at all.
+#
+# Two of the six strings this block was first written for were NOT allowlisted, because
+# they were avoidable prose of ours rather than feature vocabulary: a self-test probe and
+# a comment quoting a response shape. Both were rewritten instead. Allowlisting is for
+# strings the code must literally contain.
+#
+# أدوات تفسير عامية عامة، لا محتوى معجميًا فيها؛ الوحدة تحتاجها نصًّا كي تبحث عنها.
+# ---------------------------------------------------------------------------------
+زي ما
+زي اللي
+كأنه يقول
