@@ -993,17 +993,26 @@ lands in train and test while the document rule is still satisfied on paper.
 
 **The document check alone would not catch this**, which is why the text check exists.
 
-### 11.5 An open defect the checker found on its first run
+### 11.5 A defect the checker found on its first run — since FIXED
 
-All 6 Najdi chunks report `UNKNOWN_DOC_ID`. The licence manifest tracks that corpus as
+All 6 Najdi chunks reported `UNKNOWN_DOC_ID`. The licence manifest tracked that corpus as
 `dialect_dict_najdi_popular`; its chunk ids carry `majam_alkalimat_alshaabia_najd`.
 `SPLIT_POLICY.md` had asserted that the manifest's `doc_id` set and the corpus's are
 identical, so that the split unit and the licence-tracked unit are the same thing. That
-invariant is now broken.
+invariant had broken.
 
-Nothing leaks today — no split exists, and no SFT/DPO records derive from that corpus yet.
-It must be reconciled before either changes. Both candidate fixes and why the choice was
-not made unilaterally are recorded in `SPLIT_POLICY.md`, "Related".
+**Fixed 2026-09-09** by renaming the manifest row to `majam_alkalimat_alshaabia_najd`, so
+the manifest follows the data. The alternative — re-emitting the chunks under the
+manifest's name — was rejected because those chunk ids are already committed and pushed,
+whereas the manifest value was verified to be referenced nowhere but that row and prose
+comments. Re-run against the real chunk ids: `UNKNOWN_DOC_ID 0`, exit 0, PASS.
+
+The cost is that this row alone does not follow the `dialect_dict_*` naming convention of
+the other five dialect sources. The convention is cosmetic; the invariant is load-bearing.
+
+This is the checker paying for itself on day one: the mismatch was invisible to every
+other check in the repo, and would have surfaced as a licence-tracking gap only once
+records began deriving from that corpus.
 
 ### 11.6 What is NOT verified
 

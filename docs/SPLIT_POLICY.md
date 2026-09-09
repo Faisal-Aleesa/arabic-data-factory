@@ -6,10 +6,11 @@
 `src/verification/check_leakage.py` implements this policy. This file remains the
 rationale — the checker's docstring points here rather than restating the argument.
 
-Two things this document asserted are no longer true, and are corrected below rather than
-edited away: the corpus now has **seven** documents, not six (§"The consequence"), and the
-manifest/corpus `doc_id` sets are **no longer identical** (§"Related"). The checker found
-the second one on its first live run.
+Two things this document asserted needed correcting: the corpus now has **seven**
+documents, not six (§"The consequence"), and the manifest/corpus `doc_id` sets had
+drifted apart (§"Related"). The checker found the second on its first live run; it was
+repaired the same day by renaming the manifest row, and both are recorded rather than
+edited away.
 
 ---
 
@@ -132,28 +133,34 @@ At minimum it verifies:
 - `src/verification/validate_release.py` — last-mile form validation on release files
 - `src/data_engineering/dedup.py` — existing SHA-256 + MinHash/LSH duplicate detection
 - `docs/license_manifest.csv` — the `doc_id` vocabulary this policy splits on.
-  ~~**Verified:** the manifest's six `doc_id` values and the six appearing in the
-  corpora are the same set~~ — **NO LONGER TRUE as of 2026-09-09.**
+  **Verified, and re-verified after a break and a repair on 2026-09-09:** the manifest's
+  **seven** `doc_id` values and the seven appearing in the corpora are the same set, so
+  the split unit and the licence-tracking unit are identical.
 
-  **OPEN DEFECT.** The Najdi popular-words corpus is tracked in the manifest as
-  `dialect_dict_najdi_popular`, but its chunks carry `majam_alkalimat_alshaabia_najd`.
-  The split unit and the licence-tracking unit are now different strings for that
-  document, which is exactly the invariant this section claimed. `check_leakage.py`
-  reports all 6 of its chunks as `UNKNOWN_DOC_ID` — the checker earning its keep on its
-  first live run against real ids.
+  **This invariant broke once and was repaired; the history is kept because the repair
+  is the interesting part.** The Najdi popular-words row was first written as
+  `dialect_dict_najdi_popular`, matching the naming convention of the five
+  `dialect_dict_*` rows, while its chunks carried `majam_alkalimat_alshaabia_najd`.
+  `check_leakage.py` reported all 6 chunks as `UNKNOWN_DOC_ID` on its first live run
+  against real ids — which is what the checker is for.
 
-  Consequence: that document is a split unit that is **not** licence-tracked under the
-  name it splits by. Nothing leaks today, because no split exists and no SFT/DPO records
-  derive from it yet. It must be reconciled before it does.
+  **Fixed by changing the MANIFEST to follow the data**, not the other way round. The two
+  options were not equivalent:
+  1. rename the manifest `doc_id` — edits a licence-tracking record, but the value was
+     verified to be referenced nowhere except that row and prose comments, never in a
+     lookup;
+  2. re-emit the chunks as `dialect_dict_najdi_popular` — cosmetically tidier, but the
+     chunks are already committed and pushed, so every derived id would change under
+     anything already referencing them.
 
-  Not fixed here, because the two candidate fixes are not equivalent and the choice is
-  not the checker's to make:
-  1. change the manifest `doc_id` to `majam_alkalimat_alshaabia_najd` — matches the data,
-     but edits a licence-tracking record, and other tooling may key on the current value;
-  2. re-emit the chunks with `dialect_dict_najdi_popular` — matches the naming convention
-     of the other five dialect documents, but the chunks are already committed and
-     tracked, so the ids would change under anything already referencing them.
+  (1) was chosen because it moves a string nothing depends on, rather than rewriting ids
+  that are already public. The cost is that this one row does not match the
+  `dialect_dict_*` naming convention of the other dialect sources. That is deliberate:
+  **the convention is cosmetic and the invariant is load-bearing.** The row's
+  `license_note` records the rename.
 
-  The general rule still holds and is still the intent: a new source adds a manifest row
-  first (README, "Adding a New Source"), so it becomes a split unit at the same moment it
-  becomes a licence-tracked one. This document is the case where that did not happen.
+  The general rule still holds and is the intent: a new source adds a manifest row first
+  (README, "Adding a New Source"), so it becomes a split unit at the same moment it
+  becomes a licence-tracked one. This document is the case where that did not happen —
+  the data was pushed before the row existed — and the mismatch is what that inversion
+  cost.

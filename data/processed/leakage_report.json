@@ -16,10 +16,10 @@
     "asas_albalagha",
     "dialect_dict_eastern",
     "dialect_dict_najdi",
-    "dialect_dict_najdi_popular",
     "dialect_dict_northern",
     "dialect_dict_southern",
-    "dialect_dict_western"
+    "dialect_dict_western",
+    "majam_alkalimat_alshaabia_najd"
   ],
   "findings": [],
   "counts": {}

@@ -175,7 +175,7 @@
 لها أكثر من معنى
 
 # Title of a SECOND Najdi source, added to docs/license_manifest.csv 2026-09-09 as
-# dialect_dict_najdi_popular. It is flagged HELD_ONLY only because the held dialect
+# majam_alkalimat_alshaabia_najd. It is flagged HELD_ONLY only because the held dialect
 # dictionary CITES this book nine times - dictionaries of the same dialect reference
 # each other - so the string is bibliographic metadata, not source content.
 #
@@ -189,7 +189,7 @@
 # Second Najdi source glosses, triaged 2026-09-09.
 #
 # From data/processed/chunks_combined.jsonl (doc_id majam_alkalimat_alshaabia_najd,
-# manifest row dialect_dict_najdi_popular). Flagged HELD_ONLY because the HELD Najdi
+# manifest row majam_alkalimat_alshaabia_najd). Flagged HELD_ONLY because the HELD Najdi
 # dictionary glosses many of the same words - two dictionaries of one dialect define
 # 'a known bird' and 'the palm of the hand' the same way.
 #

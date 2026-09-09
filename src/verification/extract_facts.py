@@ -397,7 +397,8 @@ def citation_is_confident(value, freq):
 # ------------------------------------------------------ profile: najdi_popular
 #
 # THIRD profile, added 2026-09-09 for معجم الكلمات الشعبية في نجد
-# (doc_id majam_alkalimat_alshaabia_najd, manifest row dialect_dict_najdi_popular).
+# (doc_id majam_alkalimat_alshaabia_najd, which is also its manifest row - the row was
+# renamed 2026-09-09 so the split unit and the licence-tracked unit are one string).
 # Written rather than reusing either existing profile, per this module's own rule:
 # adding a corpus means measuring it and writing a profile, not picking whichever of
 # the other two looks closer. Both were measured against this source first:
