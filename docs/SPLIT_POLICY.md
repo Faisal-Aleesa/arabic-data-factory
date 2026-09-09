@@ -2,9 +2,14 @@
 
 **سياسة تقسيم البيانات: التقسيم بالوثيقة الأم، لا بالقطعة.**
 
-Written before the checker that enforces it. No leakage-checking module exists yet — when
-one is built, it implements this and this file moves next to it or is superseded by its
-docstring.
+**Status, updated 2026-09-09: the checker now exists.**
+`src/verification/check_leakage.py` implements this policy. This file remains the
+rationale — the checker's docstring points here rather than restating the argument.
+
+Two things this document asserted are no longer true, and are corrected below rather than
+edited away: the corpus now has **seven** documents, not six (§"The consequence"), and the
+manifest/corpus `doc_id` sets are **no longer identical** (§"Related"). The checker found
+the second one on its first live run.
 
 ---
 
@@ -14,7 +19,8 @@ docstring.
 >
 > No single document's derived SFT/DPO records may appear in more than one partition.
 
-For this purpose the corpus has **six documents**. The five dialect regions are distinct
+For this purpose the corpus has **seven documents** (six when this was written; the Najdi
+popular-words corpus was added 2026-09-09). The five dialect regions are distinct
 documents even though they come from one physical book, and `asas_albalagha` is one
 document even though it was ingested from 18 EPUB parts.
 
@@ -65,7 +71,13 @@ be split across partitions, and `chosen`/`rejected` must never land in different
 | `dialect_dict_northern` | 49 | 37,574 | 7% |
 | `dialect_dict_eastern` | 30 | 22,007 | 4% |
 | `dialect_dict_western` | 25 | 18,079 | 3% |
-| **total** | **731** | **538,302** | |
+| `majam_alkalimat_alshaabia_najd` | 6 | — | <1% |
+| **total** | **737** | **538,302+** | |
+
+The seventh document adds 6 chunks and does not change any conclusion below — it is far
+too small to be a partition and makes the imbalance slightly worse, not better. Its token
+count is not filled in because the EDA that produced this column has not been re-run
+across it.
 
 This policy is correct for leakage, and it has a real cost that should be decided
 deliberately rather than discovered during training:
@@ -97,7 +109,11 @@ proportions. That trades a visible constraint for an invisible leak.
 
 ## What the future checker must verify
 
-When the leakage checker is built, at minimum:
+**BUILT.** `src/verification/check_leakage.py`, all five implemented, each with a
+discrimination self-test. Codes: `UNPARSEABLE_CHUNK_ID`, `UNKNOWN_DOC_ID`,
+`DOC_IN_MULTIPLE_PARTITIONS`, `PAIR_SPLIT`, `TEXT_CROSSES_PARTITIONS`.
+
+At minimum it verifies:
 
 - every record's `source_chunk_id` parses to a known `doc_id` — **fail loudly** on one
   that does not, rather than treating it as its own document
@@ -116,8 +132,28 @@ When the leakage checker is built, at minimum:
 - `src/verification/validate_release.py` — last-mile form validation on release files
 - `src/data_engineering/dedup.py` — existing SHA-256 + MinHash/LSH duplicate detection
 - `docs/license_manifest.csv` — the `doc_id` vocabulary this policy splits on.
-  **Verified:** the manifest's six `doc_id` values and the six appearing in the
-  corpora are the same set, so the split unit and the licence-tracking unit are
-  identical. A new source adds a manifest row first (README, "Adding a New
-  Source"), which means it becomes a split unit at the same moment it becomes a
-  licence-tracked one.
+  ~~**Verified:** the manifest's six `doc_id` values and the six appearing in the
+  corpora are the same set~~ — **NO LONGER TRUE as of 2026-09-09.**
+
+  **OPEN DEFECT.** The Najdi popular-words corpus is tracked in the manifest as
+  `dialect_dict_najdi_popular`, but its chunks carry `majam_alkalimat_alshaabia_najd`.
+  The split unit and the licence-tracking unit are now different strings for that
+  document, which is exactly the invariant this section claimed. `check_leakage.py`
+  reports all 6 of its chunks as `UNKNOWN_DOC_ID` — the checker earning its keep on its
+  first live run against real ids.
+
+  Consequence: that document is a split unit that is **not** licence-tracked under the
+  name it splits by. Nothing leaks today, because no split exists and no SFT/DPO records
+  derive from it yet. It must be reconciled before it does.
+
+  Not fixed here, because the two candidate fixes are not equivalent and the choice is
+  not the checker's to make:
+  1. change the manifest `doc_id` to `majam_alkalimat_alshaabia_najd` — matches the data,
+     but edits a licence-tracking record, and other tooling may key on the current value;
+  2. re-emit the chunks with `dialect_dict_najdi_popular` — matches the naming convention
+     of the other five dialect documents, but the chunks are already committed and
+     tracked, so the ids would change under anything already referencing them.
+
+  The general rule still holds and is still the intent: a new source adds a manifest row
+  first (README, "Adding a New Source"), so it becomes a split unit at the same moment it
+  becomes a licence-tracked one. This document is the case where that did not happen.

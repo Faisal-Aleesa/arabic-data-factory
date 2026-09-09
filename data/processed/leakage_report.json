@@ -1,0 +1,26 @@
+{
+  "mode": "feasibility",
+  "checked_partitions": false,
+  "inputs": {
+    "dpo": 3000,
+    "sft": 4645
+  },
+  "splittable_units": 1,
+  "unit_sizes": {
+    "asas_albalagha": 7645
+  },
+  "largest_unit_share": 100.0,
+  "three_way_split_possible": false,
+  "two_way_split_possible": false,
+  "known_doc_ids": [
+    "asas_albalagha",
+    "dialect_dict_eastern",
+    "dialect_dict_najdi",
+    "dialect_dict_najdi_popular",
+    "dialect_dict_northern",
+    "dialect_dict_southern",
+    "dialect_dict_western"
+  ],
+  "findings": [],
+  "counts": {}
+}

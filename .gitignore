@@ -315,3 +315,17 @@ docs/*[Hh][Aa][Nn][Dd][Oo][Ff][Ff]*.md
 # rights-pending status of the corpus and this rule is then load-bearing for
 # containment as well.
 data/adapted/
+
+# THE SAME CONDITIONAL APPLIES TO THE GROUP D REPORTS, and is written here because the
+# files are TRACKED and therefore easy to forget about:
+#   data/processed/duplication_report.json
+#   data/processed/leakage_report.json
+# check_duplication.py embeds up to 120 characters of record text per finding so that a
+# reviewer can judge a flagged duplicate without opening the data. Today every adapted
+# record is classical-derived (asas_albalagha, CC BY-SA) and Task 2's generated files are
+# themselves tracked, so those excerpts add no exposure and the audit passes them clean.
+# If either checker is ever run over DIALECT-derived records, its report inherits the
+# rights-pending status of that corpus and MUST be moved behind an ignore rule in the
+# same change - a tracked path is exactly how the chunks.jsonl regression happened.
+# The licence audit is the backstop: it reads the staged report and refuses HELD_ONLY
+# text. Do not rely on it alone.

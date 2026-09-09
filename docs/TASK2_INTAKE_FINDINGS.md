@@ -886,3 +886,152 @@ python src/verification/check_dpo.py   --corpus classical_lexicon \
 
 The adapter never writes to `data/generated/**`; Task 2's files are untouched by anything
 in this report.
+
+---
+
+## 11. Duplication and leakage — landed 2026-09-09
+
+Two Group D checkers now run against the adapted data:
+`src/verification/check_duplication.py` (item 11, near-duplicate detection at the
+SFT/DPO output level) and `src/verification/check_leakage.py` (train/val/test leakage
+under `docs/SPLIT_POLICY.md`). Both reuse `data_engineering/dedup.py`'s MinHash/LSH
+machinery rather than restating it, including its LSH-as-candidate-generator design.
+
+Numbers below are from real runs on `data/adapted/` — **4,645 SFT records and 3,000 DPO
+pairs** — not from fixtures.
+
+### 11.1 Duplication: the data is clean, with two exceptions
+
+| check | result |
+|---|---|
+| `EXACT_DUP` — byte-identical after whitespace collapse, any field | **0** |
+| `NEAR_DUP` — Jaccard ≥ 0.80 within a field | **0** |
+| `PAIR_COLLAPSE` — `rejected` is a near-copy of its own `chosen` | **19** |
+| `CROSS_FILE` — DPO `chosen` is also an SFT `response` | **2,485 (82.8%)** |
+
+Zero exact and zero near duplicates across all five text fields. That is a genuinely
+clean result, and it was checked rather than assumed: the maximum pairwise Jaccard among
+all 4,645 SFT responses is **0.385**, so nothing sits anywhere near the threshold, and an
+injected copy is still caught (self-test case 2–3).
+
+**The 19 `PAIR_COLLAPSE` findings are a real defect.** These are DPO pairs whose two
+sides say the same thing, so the pair carries no preference signal at all. **2 of them
+are byte-identical** — `chosen` and `rejected` are literally the same string. All 19 are
+`rejection_type: partial_factual_errors`, which is 1% of that type. No per-field scan
+finds these: both texts are unique in the corpus, and only comparing the two sides of the
+same record exposes it.
+
+Full distribution of `jaccard(chosen, rejected)`: median 0.067, p90 0.407, max 1.000.
+
+| threshold | pairs | share |
+|---|---:|---:|
+| ≥ 0.95 | 2 | 0.1% |
+| ≥ 0.90 | 5 | 0.2% |
+| ≥ 0.80 | 19 | 0.6% |
+| ≥ 0.70 | 70 | 2.3% |
+| ≥ 0.60 | 149 | 5.0% |
+
+The distribution is included because 0.80 is a threshold to argue with, not a fact. The
+70 pairs at ≥ 0.70 are a weak training signal even though they are not reported.
+
+**Ask for Task 2:** regenerate the 19 collapsed pairs, starting with the 2 identical ones.
+
+### 11.2 The one parameter that had to change, and why
+
+`dedup.py` uses `SHINGLE_SIZE = 5`, tuned for whole documents of thousands of words.
+These records are short — SFT responses median **17** words, instructions median **6**.
+`shingles()` returns the whole text as a single shingle when the text is shorter than the
+shingle size, so at size 5 that affects **27.2% of SFT instructions** (1,262 of 4,645),
+with 64.0% producing fewer than three shingles. For that quarter of the field the
+near-duplicate check silently degrades into an exact-match check and then reports a clean
+near-duplicate result it never performed.
+
+`check_duplication.py` uses size 3, where the degenerate share is 0.0%. Both sizes were
+run against the real data and both return zero near-duplicate pairs, so the change did not
+manufacture the verdict — it makes the check capable of producing one. The per-field
+`degenerate_texts` count is in every report so a shorter future dataset cannot hide the
+same way.
+
+**Limitation, stated plainly.** On text this short, a Jaccard threshold detects *copies*,
+not *paraphrases*. Measured: at 20 words a 3-word tail edit already drops similarity to
+0.68, below the 0.80 threshold. Do not read "0 near-duplicates" as "no redundant content".
+
+### 11.3 Leakage: no split is possible at all
+
+`check_leakage.py` in feasibility mode, against the adapted data:
+
+```
+splittable units (parent documents): 1
+  asas_albalagha    7,645 records   (100.0% of all records)
+two-way split IMPOSSIBLE, three-way split IMPOSSIBLE
+```
+
+Every adapted record derives from `asas_albalagha`. `SPLIT_POLICY.md` requires splitting
+by parent document, and there is exactly **one** parent document, so no train/val/test
+split of this delivery conforms to the policy. This is the direct downstream consequence
+of the delivery containing **zero dialect records** (§3): the missing dialect coverage is
+not only a distribution problem, it removes every splittable unit but one.
+
+Feasibility mode exits **2**, never 0, and prints "no partition check was performed."
+A run that checked nothing must not read as a pass.
+
+### 11.4 The naive split fails loudly, as it should
+
+To confirm the checker detects what it claims, the split a team would actually reach for
+first — SFT as train, DPO as test — was run through VERIFY mode:
+
+```
+DOC_IN_MULTIPLE_PARTITIONS     1
+TEXT_CROSSES_PARTITIONS    6,002      (5,485 exact, 517 near)
+exit 1 — FAIL
+```
+
+Of the 6,002 crossings, **2,983 involve text of 10 or more tokens**, so they cannot be
+dismissed as short generic phrases (828 are ≤ 4 tokens and probably can be). This is the
+82.8% cross-file overlap from §11.1 doing exactly what it threatens: the same sentence
+lands in train and test while the document rule is still satisfied on paper.
+
+**The document check alone would not catch this**, which is why the text check exists.
+
+### 11.5 An open defect the checker found on its first run
+
+All 6 Najdi chunks report `UNKNOWN_DOC_ID`. The licence manifest tracks that corpus as
+`dialect_dict_najdi_popular`; its chunk ids carry `majam_alkalimat_alshaabia_najd`.
+`SPLIT_POLICY.md` had asserted that the manifest's `doc_id` set and the corpus's are
+identical, so that the split unit and the licence-tracked unit are the same thing. That
+invariant is now broken.
+
+Nothing leaks today — no split exists, and no SFT/DPO records derive from that corpus yet.
+It must be reconciled before either changes. Both candidate fixes and why the choice was
+not made unilaterally are recorded in `SPLIT_POLICY.md`, "Related".
+
+### 11.6 What is NOT verified
+
+- No partition check has been performed on real partitions, because none exist. §11.4 is
+  a deliberately constructed failing case, not a released split.
+- Near-duplicate sensitivity is a copy check, not a paraphrase check (§11.2).
+- `canonical_text` collapses whitespace but does **not** fold alef/ya. Two spellings of
+  one word are two different shingles, so a spelling-variant near-duplicate is invisible.
+  Folding was rejected on `clean.py`'s reasoning: the fold is right for matching and wrong
+  for text you keep, and a duplicate verdict computed on a form that is not the shipped
+  form would describe a text that does not exist.
+- Near-duplicates are **flagged, not deleted**, per the standing project rule. Removal is
+  opt-in via `--apply`, which writes a new file and never edits in place.
+
+### A note on reading the reports
+
+`duplication_report.json` **samples** its per-finding lists at 50 entries. The COUNTS are
+computed before the cap and are never reduced — `cross_file_findings_total: 2485` sits
+next to a 50-entry `cross_file_findings` list, with `cross_file_findings_truncated: 2435`.
+Enumerating all 2,485 produced a 17,712-line, 466KB file in a repo where every other
+report is 21–62 lines, and it would churn entirely on each regeneration. The full lists
+are still returned in memory, so `--apply` and any programmatic caller see everything.
+
+### Reproducing §11
+
+```bash
+python src/verification/check_duplication.py --self-test
+python src/verification/check_duplication.py
+python src/verification/check_leakage.py --self-test
+python src/verification/check_leakage.py            # feasibility; exits 2 by design
+```

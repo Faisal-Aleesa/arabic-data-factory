@@ -1,0 +1,675 @@
+{
+  "threshold": 0.8,
+  "lsh_index_threshold": 0.6,
+  "shingle_size": 3,
+  "shingle_size_source": "check_duplication.SHORT_TEXT_SHINGLE (deliberately not dedup.SHINGLE_SIZE=5; see docstring)",
+  "num_perm": 128,
+  "sft": {
+    "records": 4645,
+    "fields": {
+      "instruction": {
+        "records": 4645,
+        "degenerate_texts": 0,
+        "degenerate_pct": 0.0
+      },
+      "response": {
+        "records": 4645,
+        "degenerate_texts": 1,
+        "degenerate_pct": 0.02
+      }
+    },
+    "findings": [],
+    "findings_total": 0,
+    "findings_truncated": 0
+  },
+  "dpo": {
+    "records": 3000,
+    "fields": {
+      "prompt": {
+        "records": 3000,
+        "degenerate_texts": 0,
+        "degenerate_pct": 0.0
+      },
+      "chosen": {
+        "records": 3000,
+        "degenerate_texts": 0,
+        "degenerate_pct": 0.0
+      },
+      "rejected": {
+        "records": 3000,
+        "degenerate_texts": 1,
+        "degenerate_pct": 0.03
+      }
+    },
+    "findings": [
+      {
+        "code": "PAIR_COLLAPSE",
+        "field": "chosen|rejected",
+        "index": 29,
+        "jaccard": 0.8,
+        "identical": false,
+        "rejection_type": "partial_factual_errors",
+        "chunk_id": "asas_albalagha_c0002",
+        "text": [
+          "هذي كناية يستخدمونها عشان يقصدون المسافة الكبيرة بين العراق واليمن، لأن أهل هالمناطق كانوا يتبايعون بالدراهم والأدم. يعن",
+          "هذي كناية يستخدمونها عشان يقصدون المسافة الكبيرة بين العراق والشام، لأن أهل هالمناطق كانوا يتبايعون بالدراهم والأدم. يعن"
+        ]
+      },
+      {
+        "code": "PAIR_COLLAPSE",
+        "field": "chosen|rejected",
+        "index": 45,
+        "jaccard": 1.0,
+        "identical": true,
+        "rejection_type": "partial_factual_errors",
+        "chunk_id": "asas_albalagha_c0003",
+        "text": [
+          "يعني هم عايشين في ضيق وصعوبة من ناحية المعيشة. وممكن يقصدون إنهم محبوسين أو مضيق عليهم، زي ما قالوا \"أزلوا حتى هزلوا\".",
+          "يعني هم عايشين في ضيق وصعوبة من ناحية المعيشة. وممكن يقصدون إنهم محبوسين أو مضيق عليهم، زي ما قالوا \"أزلوا حتى هزلوا\"."
+        ]
+      },
+      {
+        "code": "PAIR_COLLAPSE",
+        "field": "chosen|rejected",
+        "index": 46,
+        "jaccard": 0.913,
+        "identical": false,
+        "rejection_type": "partial_factual_errors",
+        "chunk_id": "asas_albalagha_c0003",
+        "text": [
+          "يعني كتبوا في آخر الكتاب نسخة عمل أو فصل مهم، زي ما أهل الديوان يسوون. كأنهم قَوّوا الكتاب أو كملوه بشيء مهم في نهايته.",
+          "يعني كتبوا في آخر الكتاب نسخة عمل أو فصل مهم، زي ما أهل الديوان يسوون. كأنهم قَوّوا الكتاب أو كملوه بشيء مهم في بدايته."
+        ]
+      },
+      {
+        "code": "PAIR_COLLAPSE",
+        "field": "chosen|rejected",
+        "index": 465,
+        "jaccard": 0.8462,
+        "identical": false,
+        "rejection_type": "partial_factual_errors",
+        "chunk_id": "asas_albalagha_c0039",
+        "text": [
+          "معناها إن الشخص هذا دخل في شدة الحرب وحرارتها (اصطلى بجاحم الحرب)، وبعد ما ذاق ويلاتها هدأ وسكنت حماسته وغضبه (فبرد). يع",
+          "معناها إن الشخص هذا دخل في شدة الحرب وحرارتها (اصطلى بجاحم الحرب)، وبعد ما ذاق ويلاتها هدأ وسكنت حماسته وغضبه (فبرد). يع"
+        ]
+      },
+      {
+        "code": "PAIR_COLLAPSE",
+        "field": "chosen|rejected",
+        "index": 513,
+        "jaccard": 0.8,
+        "identical": false,
+        "rejection_type": "partial_factual_errors",
+        "chunk_id": "asas_albalagha_c0043",
+        "text": [
+          "هذا تعبير مجازي، ومعناه إن الواحد وطن نفسه على أمر معين وعزم عليه بقوة، وقرر يسويه. أصلها من قصة قناص ضرب كلبته على الصي",
+          "هذا تعبير مجازي، ومعناه إن الواحد وطن نفسه على أمر معين وعزم عليه بقوة، وقرر يسويه. أصلها من قصة قناص ضرب كلبته عشان تصي"
+        ]
+      },
+      {
+        "code": "PAIR_COLLAPSE",
+        "field": "chosen|rejected",
+        "index": 525,
+        "jaccard": 0.8214,
+        "identical": false,
+        "rejection_type": "partial_factual_errors",
+        "chunk_id": "asas_albalagha_c0044",
+        "text": [
+          "لما يقولون \"هذا لا يجزي عنك\" يعني إن هالشيء ما يكفي أو ما يقضي حاجتك، يعني ما راح يغنيك أو يسد مكان الشيء اللي تبغاه.",
+          "لما يقولون \"هذا لا يجزي عنك\" يعني إن هالشيء ما يكفي أو ما يقضي حاجتك، يعني ما راح يغنيك أو يسد مكان الشيء اللي تبغاه. وه"
+        ]
+      },
+      {
+        "code": "PAIR_COLLAPSE",
+        "field": "chosen|rejected",
+        "index": 1537,
+        "jaccard": 0.931,
+        "identical": false,
+        "rejection_type": "partial_factual_errors",
+        "chunk_id": "asas_albalagha_c0131",
+        "text": [
+          "يعني رحت له بس ما أعطاني ولا شيء، لا شاة ولا بعير. \"أثغى\" يعني صوت الشاة، و\"أرغى\" يعني صوت البعير، فالمعنى إنه ما أعطاني",
+          "يعني رحت له بس ما أعطاني ولا شيء، لا شاة ولا بعير. \"أثغى\" يعني صوت الشاة، و\"أرغى\" يعني صوت البعير، فالمعنى إنه ما أعطاني"
+        ]
+      },
+      {
+        "code": "PAIR_COLLAPSE",
+        "field": "chosen|rejected",
+        "index": 1540,
+        "jaccard": 1.0,
+        "identical": true,
+        "rejection_type": "partial_factual_errors",
+        "chunk_id": "asas_albalagha_c0131",
+        "text": [
+          "يعني إن فلان انقتل أو مات. هذي عبارة مجازية يستخدمونها للدلالة على الموت، زي ما يقولون \"صفرت وطابه\" أو \"كفئت جفنته\".",
+          "يعني إن فلان انقتل أو مات. هذي عبارة مجازية يستخدمونها للدلالة على الموت، زي ما يقولون \"صفرت وطابه\" أو \"كفئت جفنته\"."
+        ]
+      },
+      {
+        "code": "PAIR_COLLAPSE",
+        "field": "chosen|rejected",
+        "index": 1586,
+        "jaccard": 0.8,
+        "identical": false,
+        "rejection_type": "partial_factual_errors",
+        "chunk_id": "asas_albalagha_c0135",
+        "text": [
+          "يعني الحمار يكون عنده نقطتين سوداوين في يديه، شكلها زي الدرهمين.",
+          "يعني الحمار يكون عنده نقطتين سوداوين في يديه، شكلها زي الريالين."
+        ]
+      },
+      {
+        "code": "PAIR_COLLAPSE",
+        "field": "chosen|rejected",
+        "index": 1650,
+        "jaccard": 0.8636,
+        "identical": false,
+        "rejection_type": "partial_factual_errors",
+        "chunk_id": "asas_albalagha_c0141",
+        "text": [
+          "يقولونها لما يكون الرجل تعرض للقتل وصار دمه مهدور، ويشبهون دمه باللبن اللي خثر وصار جاهز للخض، يعني خلاص حان وقت قتله.",
+          "يقولونها لما يكون الرجل تعرض للقتل وصار دمه مهدور، ويشبهون دمه باللبن اللي خثر وصار جاهز للخض، يعني خلاص حان وقت الانتقا"
+        ]
+      },
+      {
+        "code": "PAIR_COLLAPSE",
+        "field": "chosen|rejected",
+        "index": 1755,
+        "jaccard": 0.8235,
+        "identical": false,
+        "rejection_type": "partial_factual_errors",
+        "chunk_id": "asas_albalagha_c0150",
+        "text": [
+          "نقول 'تزكر بطنه' لما يكون البطن مليان مرة، لدرجة إنه صار زي الزكرة اللي هي الوعاء المليان.",
+          "نقول 'تزكر بطنه' لما يكون البطن مليان مرة، لدرجة إنه صار زي الزكرة اللي هي الوعاء المليان بالمويه."
+        ]
+      },
+      {
+        "code": "PAIR_COLLAPSE",
+        "field": "chosen|rejected",
+        "index": 2011,
+        "jaccard": 0.9,
+        "identical": false,
+        "rejection_type": "partial_factual_errors",
+        "chunk_id": "asas_albalagha_c0171",
+        "text": [
+          "يعني الطعام صار له ريحة أو طعم مو زين، كأنه فسد أو تغير. وأصل الكلمة من \"سنخ الأسنان\" اللي تتآكل أصولها.",
+          "يعني الطعام صار له ريحة أو طعم مو زين، كأنه فسد أو تغير. وأصل الكلمة من \"سنخ الأسنان\" اللي تتآكل أطرافها."
+        ]
+      },
+      {
+        "code": "PAIR_COLLAPSE",
+        "field": "chosen|rejected",
+        "index": 2141,
+        "jaccard": 0.8333,
+        "identical": false,
+        "rejection_type": "partial_factual_errors",
+        "chunk_id": "asas_albalagha_c0182",
+        "text": [
+          "نقولها للي يعطيك شيء قليل وأنت محتاج لكثير، زي المطر الخفيف اللي ما يسوي شيء في الوادي الكبير الواسع.",
+          "نقولها للي يعطيك شيء قليل وأنت محتاج لكثير، زي المطر الخفيف اللي ما يسوي شيء في الوادي الصغير."
+        ]
+      },
+      {
+        "code": "PAIR_COLLAPSE",
+        "field": "chosen|rejected",
+        "index": 2266,
+        "jaccard": 0.8182,
+        "identical": false,
+        "rejection_type": "partial_factual_errors",
+        "chunk_id": "asas_albalagha_c0193",
+        "text": [
+          "هذا مثل يقولونه عشان يأكدون على الصدق، يعني صدقني صدق ما فيه شك، زي صدق سن البكرة اللي هو سن الناقة الشابة.",
+          "هذا مثل يقولونه عشان يأكدون على الصدق، يعني صدقني صدق ما فيه شك، زي صدق سن البكرة اللي هو سن الجمل الصغير."
+        ]
+      },
+      {
+        "code": "PAIR_COLLAPSE",
+        "field": "chosen|rejected",
+        "index": 2819,
+        "jaccard": 0.8,
+        "identical": false,
+        "rejection_type": "partial_factual_errors",
+        "chunk_id": "asas_albalagha_c0240",
+        "text": [
+          "هذا مثل ينقال لما الدلو تتعلق في البير، و'صرّ الجندب' يعني الجندب يصدر صوته. الضمير في 'معالقها' يرجع للدلو. يعني يدل عل",
+          "هذا مثل ينقال لما الدلو تتعلق في البير، و'صرّ الجندب' يعني الجندب يصدر صوته. الضمير في 'معالقها' يرجع للدلو. يعني يدل عل"
+        ]
+      },
+      {
+        "code": "PAIR_COLLAPSE",
+        "field": "chosen|rejected",
+        "index": 2823,
+        "jaccard": 0.8571,
+        "identical": false,
+        "rejection_type": "partial_factual_errors",
+        "chunk_id": "asas_albalagha_c0240",
+        "text": [
+          "لما يقولون 'علق لراحلتك' يعني إذا نزلت من بعيرك ومشيت، حط الخطام حقه على رقبته.",
+          "لما يقولون 'علق لراحلتك' يعني إذا نزلت من بعيرك ومشيت، حط الخطام حقه على ظهره."
+        ]
+      },
+      {
+        "code": "PAIR_COLLAPSE",
+        "field": "chosen|rejected",
+        "index": 2843,
+        "jaccard": 0.8462,
+        "identical": false,
+        "rejection_type": "partial_factual_errors",
+        "chunk_id": "asas_albalagha_c0242",
+        "text": [
+          "Answer: يقولون 'فلان عميد' إذا كان مريض مرة وما يقدر يجلس إلا إذا سندوه بالوسائد. بعدين توسع المعنى وصار يشمل القلب المر",
+          "يقولون 'فلان عميد' إذا كان مريض مرة وما يقدر يجلس إلا إذا سندوه بالوسائد. بعدين توسع المعنى وصار يشمل القلب المريض أو ال"
+        ]
+      },
+      {
+        "code": "PAIR_COLLAPSE",
+        "field": "chosen|rejected",
+        "index": 2863,
+        "jaccard": 0.8649,
+        "identical": false,
+        "rejection_type": "partial_factual_errors",
+        "chunk_id": "asas_albalagha_c0243",
+        "text": [
+          "لما نقول 'أتاني عنق من الناس' يعني جتني مجموعة كبيرة ومتقدمة من الناس. وكلمة 'عنق' لها معاني ثانية، زي السير السريع، أو ",
+          "لما نقول 'أتاني عنق من الناس' يعني جتني مجموعة كبيرة من الناس. وكلمة 'عنق' لها معاني ثانية، زي السير السريع، أو لما الزر"
+        ]
+      },
+      {
+        "code": "PAIR_COLLAPSE",
+        "field": "chosen|rejected",
+        "index": 2917,
+        "jaccard": 0.8636,
+        "identical": false,
+        "rejection_type": "partial_factual_errors",
+        "chunk_id": "asas_albalagha_c0248",
+        "text": [
+          "يقولونها كدعاء على الكاذب، ومعناها إنه ما يلقى حليب يشربه في المساء (الغبوق) ويضطر يشرب مويه باردة بداله، يعني دعاء عليه",
+          "يقولونها كدعاء على الكاذب، ومعناها إنه ما يلقى حليب يشربه في المساء (الغبوق) ويضطر يشرب مويه باردة بداله، يعني دعاء عليه"
+        ]
+      }
+    ],
+    "findings_total": 19,
+    "findings_truncated": 0
+  },
+  "pair_similarity": {
+    "max": 1.0,
+    "p90": 0.4074,
+    "median": 0.0667,
+    "at_or_above": {
+      "0.95": 2,
+      "0.9": 5,
+      "0.8": 19,
+      "0.7": 70,
+      "0.6": 149
+    }
+  },
+  "cross_file": {
+    "dpo_chosen_also_an_sft_response": 2485,
+    "pct_of_dpo": 82.83
+  },
+  "cross_file_findings": [
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 0,
+      "sft_index": 0,
+      "chunk_id": "asas_albalagha_c0000"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 1,
+      "sft_index": 1,
+      "chunk_id": "asas_albalagha_c0000"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 2,
+      "sft_index": 2,
+      "chunk_id": "asas_albalagha_c0000"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 3,
+      "sft_index": 3,
+      "chunk_id": "asas_albalagha_c0000"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 4,
+      "sft_index": 4,
+      "chunk_id": "asas_albalagha_c0000"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 5,
+      "sft_index": 5,
+      "chunk_id": "asas_albalagha_c0000"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 6,
+      "sft_index": 6,
+      "chunk_id": "asas_albalagha_c0000"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 7,
+      "sft_index": 7,
+      "chunk_id": "asas_albalagha_c0000"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 8,
+      "sft_index": 8,
+      "chunk_id": "asas_albalagha_c0000"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 9,
+      "sft_index": 9,
+      "chunk_id": "asas_albalagha_c0000"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 10,
+      "sft_index": 10,
+      "chunk_id": "asas_albalagha_c0000"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 11,
+      "sft_index": 11,
+      "chunk_id": "asas_albalagha_c0000"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 13,
+      "sft_index": 13,
+      "chunk_id": "asas_albalagha_c0001"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 14,
+      "sft_index": 14,
+      "chunk_id": "asas_albalagha_c0001"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 15,
+      "sft_index": 15,
+      "chunk_id": "asas_albalagha_c0001"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 16,
+      "sft_index": 16,
+      "chunk_id": "asas_albalagha_c0001"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 17,
+      "sft_index": 17,
+      "chunk_id": "asas_albalagha_c0001"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 18,
+      "sft_index": 18,
+      "chunk_id": "asas_albalagha_c0001"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 19,
+      "sft_index": 19,
+      "chunk_id": "asas_albalagha_c0001"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 20,
+      "sft_index": 20,
+      "chunk_id": "asas_albalagha_c0001"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 21,
+      "sft_index": 21,
+      "chunk_id": "asas_albalagha_c0001"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 22,
+      "sft_index": 22,
+      "chunk_id": "asas_albalagha_c0001"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 23,
+      "sft_index": 23,
+      "chunk_id": "asas_albalagha_c0001"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 24,
+      "sft_index": 24,
+      "chunk_id": "asas_albalagha_c0002"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 25,
+      "sft_index": 25,
+      "chunk_id": "asas_albalagha_c0002"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 26,
+      "sft_index": 26,
+      "chunk_id": "asas_albalagha_c0002"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 27,
+      "sft_index": 27,
+      "chunk_id": "asas_albalagha_c0002"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 28,
+      "sft_index": 28,
+      "chunk_id": "asas_albalagha_c0002"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 29,
+      "sft_index": 29,
+      "chunk_id": "asas_albalagha_c0002"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 30,
+      "sft_index": 30,
+      "chunk_id": "asas_albalagha_c0002"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 31,
+      "sft_index": 31,
+      "chunk_id": "asas_albalagha_c0002"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 32,
+      "sft_index": 32,
+      "chunk_id": "asas_albalagha_c0002"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 33,
+      "sft_index": 33,
+      "chunk_id": "asas_albalagha_c0002"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 34,
+      "sft_index": 34,
+      "chunk_id": "asas_albalagha_c0002"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 35,
+      "sft_index": 35,
+      "chunk_id": "asas_albalagha_c0002"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 36,
+      "sft_index": 36,
+      "chunk_id": "asas_albalagha_c0003"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 37,
+      "sft_index": 37,
+      "chunk_id": "asas_albalagha_c0003"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 38,
+      "sft_index": 38,
+      "chunk_id": "asas_albalagha_c0003"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 39,
+      "sft_index": 39,
+      "chunk_id": "asas_albalagha_c0003"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 40,
+      "sft_index": 40,
+      "chunk_id": "asas_albalagha_c0003"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 41,
+      "sft_index": 41,
+      "chunk_id": "asas_albalagha_c0003"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 42,
+      "sft_index": 42,
+      "chunk_id": "asas_albalagha_c0003"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 43,
+      "sft_index": 43,
+      "chunk_id": "asas_albalagha_c0003"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 44,
+      "sft_index": 44,
+      "chunk_id": "asas_albalagha_c0003"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 45,
+      "sft_index": 45,
+      "chunk_id": "asas_albalagha_c0003"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 46,
+      "sft_index": 46,
+      "chunk_id": "asas_albalagha_c0003"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 47,
+      "sft_index": 47,
+      "chunk_id": "asas_albalagha_c0003"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 48,
+      "sft_index": 48,
+      "chunk_id": "asas_albalagha_c0004"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 49,
+      "sft_index": 49,
+      "chunk_id": "asas_albalagha_c0004"
+    },
+    {
+      "code": "CROSS_FILE",
+      "field": "dpo.chosen==sft.response",
+      "dpo_index": 50,
+      "sft_index": 50,
+      "chunk_id": "asas_albalagha_c0004"
+    }
+  ],
+  "counts": {
+    "PAIR_COLLAPSE": 19,
+    "CROSS_FILE": 2485
+  },
+  "inputs": {
+    "sft": "data/adapted/sft_task2.jsonl",
+    "dpo": "data/adapted/dpo_task2.jsonl"
+  },
+  "cross_file_findings_total": 2485,
+  "cross_file_findings_truncated": 2435,
+  "report_sample_limit": 50
+}
