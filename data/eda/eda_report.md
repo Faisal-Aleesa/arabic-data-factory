@@ -1,6 +1,10 @@
-# EDA Report - أساس البلاغة
+# EDA Report - asas_albalagha + majam_alkalimat_alshaabia_najd
 
-- **Source corpus:** Arabic Wikisource | **License:** CC BY-SA 4.0
+- **Source corpora:** 2 distinct source/licence pairs in this run - this report spans more than one licence:
+    - Arabic Wikisource | **License:** CC BY-SA 4.0
+    - Local scanned PDF | **License:** permission_granted
+
+> **Header corrected 2026-09-09.** This file previously read "# EDA Report - أساس البلاغة" with a single licence line of "Arabic Wikisource | License: CC BY-SA 4.0", while covering TWO documents. eda.py took the licence from the first chunk only and applied it to the whole report, so a share-alike licence was asserted over a `permission_granted` source whose permission does not establish redistribution. eda.py now lists every distinct source/licence pair; see its `build_report`. The title was generic for the same reason.
 - **Documents in:** 2
 - **Source format:** `dictionary` (explicit per batch; clean.py and chunk.py must agree)
 - **Chunks out:** 400
