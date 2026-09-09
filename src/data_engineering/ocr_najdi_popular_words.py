@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 import subprocess
 
 from pdf2image import convert_from_path
@@ -7,9 +8,18 @@ from pdf2image import convert_from_path
 PDF_PATH = Path("data/raw/najdi/majam_alkalimat_alshaabia_najd.pdf")
 OUTPUT_DIR = Path("data/interim/najdi/ocr_pages")
 
-TESSERACT_EXE = Path(r"C:\Program Files\Tesseract-OCR\tesseract.exe")
-TESSDATA_DIR = Path(r"C:\Temp\tessdata_best")
-POPPLER_PATH = r"C:\poppler\poppler-26.07.0\Library\bin"
+# External tool locations, read from the environment with the original values as
+# fallbacks - so this still runs unchanged on the machine it was written on, and
+# also runs anywhere else. Hardcoded absolute paths like C:\Program Files\... are
+# the reason commit bc8ca91 ("Make project portable across all computers") did not
+# actually make these two scripts portable. poppler is already treated this way in
+# requirements.txt, which documents pdftotext as an external binary rather than
+# pinning a path to it.
+TESSERACT_EXE = Path(os.environ.get(
+    "TESSERACT_EXE", r"C:\Program Files\Tesseract-OCR\tesseract.exe"))
+TESSDATA_DIR = Path(os.environ.get("TESSDATA_DIR", r"C:\Temp\tessdata_best"))
+POPPLER_PATH = os.environ.get(
+    "POPPLER_PATH", r"C:\poppler\poppler-26.07.0\Library\bin")
 
 DPI = 350
 LANG = "ara"

@@ -1,16 +1,20 @@
 from pathlib import Path
+import os
 import subprocess
 
 
 OCR_DIR = Path("data/interim/najdi/ocr_pages")
 
-TESSERACT_EXE = Path(
-    r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-)
+# Same env-var-with-fallback treatment as ocr_najdi_popular_words.py; see the note
+# there. These two files are the only places in the repo holding absolute machine
+# paths, and they must stay in step with each other.
+TESSERACT_EXE = Path(os.environ.get(
+    "TESSERACT_EXE", r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+))
 
-TESSDATA_DIR = Path(
-    r"C:\Temp\tessdata_best"
-)
+TESSDATA_DIR = Path(os.environ.get(
+    "TESSDATA_DIR", r"C:\Temp\tessdata_best"
+))
 
 START_PAGE = 27
 END_PAGE = 321

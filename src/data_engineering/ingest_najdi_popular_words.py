@@ -16,7 +16,13 @@ TITLE = "معجم الكلمات الشعبية في نجد"
 
 # حط هنا القيم نفسها المسجلة عندكم في license_manifest.csv
 AUTHOR = "عبدالرحمن بن عبدالعزيز المانع"
-LICENSE = "CC BY-SA 4.0"
+# CC BY-SA 4.0 is the licence of the CLASSICAL Wikisource corpus, not this one.
+# docs/license_manifest.csv records dialect_dict_najdi_popular as
+# permission_granted (confirmed by Sultan 2026-09-09, not independently
+# verified - see the license_note there for what is still open). Emitting
+# CC BY-SA here told every downstream consumer the text was freely
+# redistributable under share-alike, which the permission does not establish.
+LICENSE = "permission_granted"
 
 SOURCE = "Local scanned PDF"
 REGION = "najdi"
