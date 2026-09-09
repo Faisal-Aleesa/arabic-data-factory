@@ -184,3 +184,30 @@
 # 437 full glosses (1%) from that source appear verbatim in the held corpus, so the two
 # books are independent works, not copies.
 معجم الكلمات الشعبية في نجد
+
+# ---------------------------------------------------------------------------------
+# Second Najdi source glosses, triaged 2026-09-09.
+#
+# From data/processed/chunks_combined.jsonl (doc_id majam_alkalimat_alshaabia_najd,
+# manifest row dialect_dict_najdi_popular). Flagged HELD_ONLY because the HELD Najdi
+# dictionary glosses many of the same words - two dictionaries of one dialect define
+# 'a known bird' and 'the palm of the hand' the same way.
+#
+# MEASURED before allowlisting: 303 of 473 headwords (64%) appear in the held corpus,
+# but only 4 of 437 full glosses (1%) match verbatim. High headword overlap with
+# near-zero gloss overlap is the signature of two independent works on one subject,
+# not a copy. Longest run here is four words; nothing at five or more matched.
+#
+# Listed individually, not silenced by raising --min-words - same reasoning as the
+# Task 2 block above.
+#
+# عبارات تعريفية قصيرة يشترك فيها معجمان للهجة واحدة، لا نقل بينهما.
+# ---------------------------------------------------------------------------------
+باطن الكف
+طائر معروف
+غافل وخامل
+للكلب لطرده
+لم أستطع
+الثور أو البقرة
+قطعة من العجين
+نداء من الزوج لزوجته

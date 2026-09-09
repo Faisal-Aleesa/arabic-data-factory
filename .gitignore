@@ -230,6 +230,18 @@ archive/dialect_dictionary_apparatus/*
 
 # Dialect-phase chunk output: derived from a source whose rights are not yet cleared
 # (license: unverified_pending_review).
+#
+# THIS PATH MUST NEVER BECOME TRACKED. Git stops applying ignore rules to a path once
+# it is tracked, so a single commit of this filename silently disables the only
+# control holding back 337 dialect chunks - and the licence audit cannot catch it,
+# because the audit compares AGAINST this corpus and cannot flag it as a leak of
+# itself. It happened on 2026-09-09: a teammate ran chunk.py without --out, whose
+# default is exactly this path, and pushed the result. Verified at the time:
+# check-ignore reported NOT IGNORED and `git add -A` would have staged the held
+# corpus. Fixed by renaming that file to data/processed/chunks_combined.jsonl.
+#
+# Per-source outputs belong at data/processed/chunks_<source>.jsonl. The unsuffixed
+# name is the dialect phase's, and it is load-bearing for containment.
 data/processed/chunks.jsonl
 
 # Local-only EDA build that reproduces source excerpts (see eda.py --no-examples)
