@@ -102,7 +102,8 @@ import json
 import os
 import re
 
-from clean import corpus_of, scope_to_corpus   # one definition, shared
+from clean import (corpus_of, scope_to_corpus,   # one definition, shared
+                   guard_report_overwrite)
 
 INTERIM_DIR = "data/interim"
 DEDUP_REPORT = "data/processed/dedup_report.json"
@@ -373,6 +374,11 @@ def main() -> None:
         "per_document": per_doc,
         "output": args.out,
     }
+    # Second layer, independent of the scoping guard above: never replace a report
+    # that describes a different corpus. The scoping guard was defeated once and
+    # nothing downstream noticed, which is the whole argument for checking again at
+    # the point where information actually gets destroyed.
+    guard_report_overwrite(args.report, args.corpus, "chunk")
     with open(args.report, "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2)
 
