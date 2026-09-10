@@ -59,6 +59,7 @@ import glob
 import json
 import os
 import re
+import sys
 import unicodedata
 
 import ftfy
@@ -83,7 +84,12 @@ FORMATS = ("prose", "dictionary", "verse")
 #   (كلمة) :تعريفها        ( َمثَل) :تعريف بمدخل مشكول        (كلمتان معا) :تعريف مركب
 # The opening delimiter is matched as [()] because bidi reordering in the extracted
 # text sometimes renders it as ")". Requiring the closing ")" AND the colon is what
-# keeps this off numbered feature lines like "( :)1ظاهرة صوتية" and off mid-entry
+# keeps this off numbered feature lines like "( :)1ططط ظظظ" and off mid-entry
+# (placeholder swapped 2026-09-09: the previous two-word example, though written as
+# an invented illustration, occurs verbatim in the rights-pending corpus and the
+# licence audit refuses it. The colliding phrase is deliberately not repeated here.
+# It also made this block's own "no text from a rights-unverified source appears in
+# this file" claim untrue, which is exactly what the audit is for.)
 # parentheticals such as "(إشارة جانبية).وتكملة التعريف...".
 HEADWORD_RE = re.compile(r"(?m)^[ \t]*[()][^)\n]{1,45}\)[ \t]*:")
 MIN_HEADWORDS_FOR_ENTRY_SPLIT = 5
@@ -520,7 +526,48 @@ def scope_to_corpus(items: list, corpus: str | None, stage: str) -> list:
 
     Never falls back to "process everything": that is the silent-failure this exists to
     prevent. With one corpus present and no --corpus given the run proceeds unchanged.
+
+    UNLABELLED RECORDS ARE REFUSED, and that is the hard-won part of this function.
+    ------------------------------------------------------------------------------
+    This guard once passed a run that mixed two corpora into a single chunks.jsonl and
+    overwrote another corpus's report, and it did so WITHOUT MALFUNCTIONING. The commit
+    that added the guard also added the `corpus` field to the ingest scripts, because
+    the guard is only as good as that field. A contributor branched from a commit that
+    predated both, regenerated one corpus's interim with the older ingest, and wrote a
+    new ingest for a third source modelled on the older ones - so neither document
+    carried `corpus`. `corpus_of()` mapped both to UNSPECIFIED_CORPUS, the grouping saw
+    ONE key, and the guard concluded the run was correctly scoped and let it through.
+
+    The bug was not the bypass. It was that MISSING METADATA WAS READ AS AGREEMENT.
+    UNSPECIFIED_CORPUS is not a corpus; it is the absence of an answer, and lumping
+    every unlabelled record under one name makes distinct corpora indistinguishable
+    exactly when there is least evidence that they match. A safety check whose failure
+    mode is "no data, therefore consistent" fails open, and gets more dangerous the more
+    unlabelled input it sees.
+
+    So absence is now its own refusal, separate from the ambiguity refusal below. At the
+    time this was written every record in data/interim carried `corpus`, making it a
+    no-op on the existing corpora - it costs nothing today and only fires on the case
+    that actually broke.
+
+    السبب الجذري: غياب الحقل لا يعني الاتفاق. كانت السجلات غير الموسومة تُجمع تحت اسم
+    واحد، فتبدو المدونتان مدونة واحدة، ويمر الفحص بنجاح ظاهري. الغياب الآن رفض مستقل.
     """
+    unlabelled = [path for path, record in items if not record.get("corpus")]
+    if unlabelled:
+        listing = "\n".join(f"      {p}" for p in sorted(unlabelled)[:10])
+        more = ("\n      ... and %d more" % (len(unlabelled) - 10)) if len(unlabelled) > 10 else ""
+        raise SystemExit(
+            f"[{stage}] REFUSING to run: {len(unlabelled)} of {len(items)} document(s)\n"
+            f"    carry no `corpus` field. A missing corpus is NOT a corpus - grouping\n"
+            f"    unlabelled records together would make two different corpora look like\n"
+            f"    one and let a mixed run through as if it were correctly scoped.\n"
+            f"    unlabelled:\n{listing}{more}\n"
+            f"    Fix the ingest script that produced them so it writes `corpus`, then\n"
+            f"    re-run that ingest. Do not pass --corpus to work around this: it would\n"
+            f"    silently relabel documents whose real corpus is unknown."
+        )
+
     groups: dict[str, list] = {}
     for path, record in items:
         groups.setdefault(corpus_of(record), []).append((path, record))
@@ -546,6 +593,61 @@ def scope_to_corpus(items: list, corpus: str | None, stage: str) -> list:
     return items
 
 
+def guard_report_overwrite(report_path: str, corpus: str | None, stage: str) -> None:
+    """Refuse to overwrite a report that describes a DIFFERENT corpus.
+
+    Defence in depth, and it exists because the scoping guard above was defeated once
+    and nothing downstream noticed. Stage reports default to a single shared path
+    (data/processed/chunking_report.json), so a run for one corpus silently replaces
+    another corpus's provenance record - which is exactly what happened: a saudi_dialect
+    report describing 337 chunks across 5 documents was replaced by an unscoped
+    2-document run, and the loss was invisible until someone read the file weeks later.
+
+    This check does not care WHY the corpus differs. Whether the scoping guard was
+    bypassed, defeated, or simply not applicable, writing a report whose corpus does not
+    match the one already on disk destroys information, so it stops. That independence
+    is the point of a second layer: it holds even when the first one has been fooled.
+
+    A run with no corpus (corpus is None) is refused against ANY labelled report, since
+    an unscoped run is precisely the thing that caused the loss. Pass --report with a
+    per-corpus path, as data/eda already does for its reports.
+
+    طبقة ثانية: لا تُستبدل تقرير مدونة بتقرير مدونة أخرى، أيًّا كان سبب الاختلاف.
+    """
+    if not os.path.exists(report_path):
+        return
+    try:
+        with open(report_path, encoding="utf-8") as f:
+            existing = json.load(f)
+    except (ValueError, OSError):
+        return                      # unreadable or not JSON: not ours to reason about
+    if not isinstance(existing, dict):
+        return
+    prior = (existing.get("config") or {}).get("corpus", _MISSING)
+    if prior is _MISSING:
+        return                      # no corpus recorded: nothing to compare against
+    if prior == corpus:
+        return
+
+    raise SystemExit(
+        f"[{stage}] REFUSING to overwrite {report_path}:\n"
+        f"    the existing report describes corpus {prior!r}\n"
+        f"    this run would write corpus      {corpus!r}\n"
+        f"    Overwriting would delete that corpus's chunking provenance, which has\n"
+        f"    happened before and went unnoticed for days. Write this run to its own\n"
+        f"    path instead, e.g. --report {_per_corpus_report_path(report_path, corpus)}"
+    )
+
+
+_MISSING = object()
+
+
+def _per_corpus_report_path(report_path: str, corpus: str | None) -> str:
+    """Suggest <report>_<corpus>.json, matching the data/eda naming already in use."""
+    base, ext = os.path.splitext(report_path)
+    return f"{base}_{corpus or 'UNSCOPED'}{ext or '.json'}"
+
+
 # --- Runner ------------------------------------------------------------------
 # المشغِّل: يمر على كل ملفات الإدخال، ويكتب نسخة _cleaned.json لكل وثيقة،
 # ثم تقرير تنظيف مجمَّع.
@@ -556,8 +658,136 @@ def iter_input_files(interim_dir: str) -> list[str]:
     )
 
 
+def self_test() -> bool:
+    """Exercise the two scoping guards, including the case that defeated one of them.
+
+    A guard that has never been shown to refuse is not a guard. Each case below states
+    what it would mean if it failed, because these particular checks are load-bearing:
+    the corpus-mixing incident of 2026-09-09 got through a guard that was present,
+    correct, and silent.
+    """
+    ok = True
+    import tempfile
+
+    def rec(doc_id, corpus=None):
+        d = {"doc_id": doc_id, "raw_text": "x"}
+        if corpus is not None:
+            d["corpus"] = corpus
+        return d
+
+    def refuses(fn, *a):
+        try:
+            fn(*a)
+            return None
+        except SystemExit as e:
+            return str(e)
+
+    # ---- (a) absence of the field is refused, not treated as agreement --------------
+    # THE REGRESSION THAT MATTERS. Two unlabelled records once grouped under one
+    # synthetic key and the run was allowed through as "correctly scoped".
+    msg = refuses(scope_to_corpus,
+                  [("a.json", rec("asas_albalagha")),
+                   ("n.json", rec("majam_alkalimat_alshaabia_najd"))], None, "chunk")
+    if msg is None:
+        print("  [FAIL] two UNLABELLED records were accepted - missing metadata is "
+              "being read as agreement again"); ok = False
+    elif "no `corpus` field" not in msg:
+        print("  [FAIL] unlabelled records refused for the wrong reason: %s" % msg[:90])
+        ok = False
+    # a single unlabelled record among labelled ones is refused too: the mix is what
+    # matters, not whether the unlabelled ones happen to agree with each other
+    if refuses(scope_to_corpus,
+               [("a.json", rec("asas_albalagha", "classical_lexicon")),
+                ("n.json", rec("najdi"))], None, "chunk") is None:
+        print("  [FAIL] one unlabelled record among labelled ones was accepted")
+        ok = False
+    # ...and --corpus must NOT be a way around it: relabelling a document whose real
+    # corpus is unknown is exactly the silent mislabel this prevents
+    if refuses(scope_to_corpus, [("n.json", rec("najdi"))],
+               "classical_lexicon", "chunk") is None:
+        print("  [FAIL] --corpus bypassed the unlabelled refusal"); ok = False
+
+    # ---- regression: the ORIGINAL guard still behaves exactly as before -------------
+    msg = refuses(scope_to_corpus,
+                  [("a.json", rec("asas_albalagha", "classical_lexicon")),
+                   ("d.json", rec("dialect_dict_najdi", "saudi_dialect"))], None, "chunk")
+    if msg is None:
+        print("  [FAIL] two genuinely different corpora were allowed to mix"); ok = False
+    elif "more than one corpus" not in msg:
+        print("  [FAIL] mixed corpora refused for the wrong reason: %s" % msg[:90])
+        ok = False
+    # one corpus, unscoped -> proceeds unchanged, as it always has
+    one = [("a.json", rec("asas_albalagha", "classical_lexicon")),
+           ("b.json", rec("asas_albalagha", "classical_lexicon"))]
+    if len(scope_to_corpus(one, None, "chunk")) != 2:
+        print("  [FAIL] a correctly scoped single-corpus run no longer passes"); ok = False
+    # explicit --corpus still selects its subset
+    two = one + [("d.json", rec("dialect_dict_najdi", "saudi_dialect"))]
+    if len(scope_to_corpus(two, "classical_lexicon", "chunk")) != 2:
+        print("  [FAIL] --corpus no longer selects its subset"); ok = False
+    if refuses(scope_to_corpus, two, "no_such_corpus", "chunk") is None:
+        print("  [FAIL] an unknown --corpus was accepted"); ok = False
+
+    # ---- (b) a report describing another corpus is never overwritten ----------------
+    with tempfile.TemporaryDirectory() as td:
+        path = os.path.join(td, "chunking_report.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"config": {"corpus": "saudi_dialect"}, "total_chunks": 337}, f)
+
+        msg = refuses(guard_report_overwrite, path, "classical_lexicon", "chunk")
+        if msg is None:
+            print("  [FAIL] overwrote a report belonging to another corpus"); ok = False
+        else:
+            for needle in ("saudi_dialect", "classical_lexicon"):
+                if needle not in msg:
+                    print("  [FAIL] refusal does not name %r: %s" % (needle, msg[:90]))
+                    ok = False
+        # an UNSCOPED run against a labelled report is the exact incident shape
+        if refuses(guard_report_overwrite, path, None, "chunk") is None:
+            print("  [FAIL] an unscoped run overwrote a labelled report"); ok = False
+        # same corpus -> allowed, or the tool could never update its own report
+        if refuses(guard_report_overwrite, path, "saudi_dialect", "chunk") is not None:
+            print("  [FAIL] refused to rewrite a report for the SAME corpus"); ok = False
+        # no existing file -> nothing to protect
+        if refuses(guard_report_overwrite, os.path.join(td, "new.json"),
+                   "anything", "chunk") is not None:
+            print("  [FAIL] refused to create a report that did not exist yet"); ok = False
+        # unreadable / non-JSON -> not ours to reason about, must not crash the run
+        bad = os.path.join(td, "bad.json")
+        with open(bad, "w", encoding="utf-8") as f:
+            f.write("not json{")
+        if refuses(guard_report_overwrite, bad, "x", "chunk") is not None:
+            print("  [FAIL] a non-JSON report aborted the run"); ok = False
+        # a report with no corpus recorded -> nothing to compare, must not block
+        nc = os.path.join(td, "nocorpus.json")
+        with open(nc, "w", encoding="utf-8") as f:
+            json.dump({"config": {}, "total_chunks": 1}, f)
+        if refuses(guard_report_overwrite, nc, "x", "chunk") is not None:
+            print("  [FAIL] a report with no corpus field blocked the run"); ok = False
+
+    # ---- no-op on the real tree: every current record already carries `corpus` ------
+    real = []
+    for p in sorted(glob.glob(os.path.join(INTERIM_DIR, "*", "*_cleaned.json"))):
+        with open(p, encoding="utf-8") as f:
+            real.append((p, json.load(f)))
+    if real:
+        missing = [p for p, r in real if not r.get("corpus")]
+        if missing:
+            print("  [FAIL] %d existing interim record(s) lack `corpus`, so this change "
+                  "is NOT a no-op: %s" % (len(missing), missing[:3])); ok = False
+        else:
+            print("  no-op check: all %d interim record(s) carry `corpus`" % len(real))
+    else:
+        print("  no-op check: SKIPPED, no interim records on this machine")
+
+    print("passed: %s" % ok)
+    return ok
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Stage 1: deterministic cleaning.")
+    ap.add_argument("--self-test", action="store_true",
+                    help="exercise the corpus-scoping and report-overwrite guards")
     ap.add_argument("--interim-dir", default=INTERIM_DIR)
     ap.add_argument("--report", default=REPORT_PATH)
     ap.add_argument("--corpus", default=None,
@@ -577,6 +807,9 @@ def main() -> None:
                          "such as يا هــلا is dialect signal). The folded matching key always has "
                          "tatweel stripped regardless.")
     args = ap.parse_args()
+
+    if args.self_test:
+        sys.exit(0 if self_test() else 1)
 
     files = iter_input_files(args.interim_dir)
     if not files:

@@ -66,6 +66,52 @@ import check_dpo as cdpo                                        # noqa: E402
 SWAP_CHECK_TYPES = frozenset(
     t for t, d in cdpo.DETECTABILITY.items() if d == 'none')
 
+# ------------------------------------------ blind corroboration (ported from judge_dpo)
+#
+# The judge is no longer told the record's rejection_type. It names the weakness it
+# actually observes, and THIS CODE decides whether that corroborates the record - the
+# mechanism src/verification/judge_dpo.py has always used, now on the shipping path.
+#
+# WHY IT CHANGED. `JudgeInput.to_prompt_payload()` used to send `rejection_type_declared`
+# and the model was asked for `rejection_type_agrees_with_record`. Being told the expected
+# answer before being asked to check it is a leading question: agreement means "not
+# contradicted", not independent confirmation, and a pair whose label is simply wrong is
+# one the judge has been primed to accept. The failure was silent - it looked like
+# agreement, and nothing downstream re-checked the label.
+#
+# WHAT IS COMPARED, and why not the type strings. Comparison is on the DIMENSION each
+# type implies (check_dpo.CORROBORATING_DIMENSION), not on the type name, because the
+# mapping is deliberately many-to-one: verbosity and weak_organization both land on
+# `style`, unsupported_additions and less_faithful_reconstruction both on `grounding`.
+# A judge that calls a padded, badly-ordered answer `weak_organization` where the record
+# says `verbosity` has not contradicted the record - it has found the same defect and
+# named it differently. Exact string matching would escalate that correct pair as a
+# mislabel. Dimension matching reserves disagreement for a different KIND of defect.
+#
+# WHAT IS UNAFFECTED, stated so nobody reads this as a safety change: the AUTO_CONFIRM
+# floor is structural. ASSESSMENTS has no AUTO_CONFIRM value for a judge to set, and
+# judge_pipeline._maybe_escalate() can only return NEEDS_JUDGE or FLAG_SUSPICIOUS. That
+# held before this change and holds after it. What improves is escalation QUALITY: a
+# genuine mislabel now has to survive a judge that was never told what to say.
+CORROBORATING_DIMENSION = cdpo.CORROBORATING_DIMENSION
+
+
+def _corroborate(declared_type, judged_type):
+    """Does the judge's OWN named weakness corroborate the record's declared type?
+
+    Returns True / False, or None when the question does not apply - the judge named no
+    type, or one of the two types is outside the charter vocabulary. None is not a pass:
+    it means "no opinion", and callers must not read it as agreement.
+    """
+    if not declared_type or not judged_type:
+        return None
+    declared_dim = CORROBORATING_DIMENSION.get(declared_type)
+    judged_dim = CORROBORATING_DIMENSION.get(judged_type)
+    if declared_dim is None or judged_dim is None:
+        return None
+    return declared_dim == judged_dim
+
+
 # Mirror of judge_contract.ASSESSMENTS under a chosen/rejected swap.
 _MIRRORED_ASSESSMENT = {
     'chosen_better': 'rejected_better',
@@ -115,7 +161,7 @@ markdown code fences. The object MUST have this shape:
   "assessment": "chosen_better | rejected_better | equivalent | undetermined",
   "weakness_present": true | false,
   "rejection_type": "<one of the nine types> | null",
-  "rejection_type_agrees_with_record": true | false | null,
+  "rejection_type_agrees_with_record": null,
   "type_scores": {"<type>": 0.0},
   "confidence": 0.0,
   "evidence": [
@@ -128,6 +174,11 @@ substring", "explains_type": "<type> | null"}
 If weakness_present is true, evidence MUST contain at least one item whose "quote" is a \
 character-for-character substring of the text named in "quote_from". A quote that is not \
 a literal substring makes your entire output invalid and useless - do not paraphrase.
+
+Always set "rejection_type_agrees_with_record" to null. You are deliberately NOT shown \
+what type the dataset recorded for this pair, so you cannot answer it and must not guess. \
+Name the weakness you actually observe in "rejection_type"; the code compares that against \
+the record afterwards. Any non-null value you put there is ignored and overwritten.
 """
 
 
@@ -273,6 +324,16 @@ def _judge_once(judge_input: jcon.JudgeInput, client: 'jc.BaseJudgeClient',
         # failures, matching judge_provider.InvalidJSON's semantics one layer up.
         return _unavailable('InvalidJSON', str(exc), raw_text=raw_text)
 
+    # The model can no longer answer this: it was never shown the record's type. Whatever
+    # it put in the field is guesswork, so the CODE overwrites it with the blind
+    # comparison. Done here rather than in judge_contract so that validation stays purely
+    # about the model's own output, and every caller of _judge_once - including both
+    # passes of the swap check - gets a corroboration computed the same way.
+    judge_output = dataclasses.replace(
+        judge_output,
+        rejection_type_agrees_with_record=_corroborate(judge_input.rejection_type,
+                                                       judge_output.rejection_type))
+
     return JudgeResult(status='ok', judge_output=judge_output, raw_text=raw_text)
 
 
@@ -293,6 +354,171 @@ def _sample_input(rejection_type='partial_factual_errors'):
                                'detectability': 'strong', 'chosen_pct': 91.0,
                                'rejected_pct': 90.5},
     )
+
+
+def _self_test_blind_corroboration():
+    """The type-priming fix: the judge is never told the record's rejection_type.
+
+    These are the pins for the ported CORROBORATING_DIMENSION mechanism. The existing
+    57-case suite passed unchanged when the override was first wired in, because none of
+    its fixtures ever disagreed with the code - which is exactly why these exist.
+    """
+    ok = True
+
+    # 1. THE PAYLOAD MUST NOT CARRY THE ANSWER. Everything else here is downstream of
+    #    this one fact, so it is asserted directly rather than inferred.
+    payload = _sample_input('wrong_register').to_prompt_payload()
+    if 'rejection_type_declared' in payload:
+        print('  [FAIL] to_prompt_payload still sends rejection_type_declared')
+        ok = False
+    if any('wrong_register' == v for v in payload.values() if isinstance(v, str)):
+        print('  [FAIL] the declared type leaked into the payload under another key')
+        ok = False
+    # ...and the field is still on the dataclass, because the pipeline needs it
+    if _sample_input('wrong_register').rejection_type != 'wrong_register':
+        print('  [FAIL] rejection_type was removed from JudgeInput itself'); ok = False
+
+    # 2. the mapping covers every charter type, or a record could silently get no check
+    missing = [t for t in jcon.REJECTION_TYPES if t not in CORROBORATING_DIMENSION]
+    if missing:
+        print('  [FAIL] no corroborating dimension for: %s' % missing); ok = False
+
+    # 3. _corroborate: exact match, same-dimension near-miss, different dimension, and
+    #    the two abstain cases. The near-miss pair is the reason this compares dimensions
+    #    rather than type strings.
+    cases = [
+        ('verbosity', 'verbosity', True, 'exact match'),
+        ('verbosity', 'weak_organization', True, 'same dimension (style)'),
+        ('weak_organization', 'verbosity', True, 'same dimension, reversed'),
+        ('unsupported_additions', 'less_faithful_reconstruction', True,
+         'same dimension (grounding)'),
+        ('verbosity', 'partial_factual_errors', False, 'different dimension'),
+        ('wrong_register', 'wrong_formatting', False, 'different dimension'),
+        ('verbosity', None, None, 'judge named no type'),
+        (None, 'verbosity', None, 'record has no type'),
+        ('verbosity', 'not_a_charter_type', None, 'judged type outside the charter'),
+    ]
+    for declared, judged, want, why in cases:
+        got = _corroborate(declared, judged)
+        if got is not want:
+            print('  [FAIL] _corroborate(%r, %r) = %r, expected %r  (%s)'
+                  % (declared, judged, got, want, why))
+            ok = False
+
+    # 4. THE OVERRIDE ACTUALLY FIRES. A model that claims agreement it cannot have must
+    #    not be believed: the record says verbosity, the judge independently says
+    #    partial_factual_errors (a different dimension), and the model asserts True.
+    #    The code must return False. This is the case the old suite could not catch.
+    def _raw(judged_type, claims):
+        return {'schema_version': 'judge-1', 'judge_model_version': 'recorded/offline',
+                'assessment': 'chosen_better', 'weakness_present': True,
+                'rejection_type': judged_type,
+                'rejection_type_agrees_with_record': claims,
+                'type_scores': {judged_type or 'verbosity': 0.9}, 'confidence': 0.9,
+                'evidence': [{'claim': 'c', 'quote_from': 'rejected',
+                              'quote': 'النابعة', 'explains_type': judged_type}],
+                'notes': None}
+
+    client = jc.RecordedJudgeClient()
+    for declared, judged, claims, want, why in [
+            ('verbosity', 'partial_factual_errors', True, False,
+             'model claimed agreement across dimensions'),
+            ('verbosity', 'weak_organization', False, True,
+             'model denied agreement within one dimension'),
+            ('partial_factual_errors', 'partial_factual_errors', None, True,
+             'model sent null, as the prompt now instructs')]:
+        lbl = 'ovr_%s_%s' % (declared, judged)
+        client.register(lbl, _raw(judged, claims))
+        res = judge_pair(_sample_input(declared), client, case_label=lbl)
+        if res.status != 'ok':
+            print('  [FAIL] override case %s did not return ok: %s' % (lbl, res.reason))
+            ok = False
+            continue
+        got = res.judge_output.rejection_type_agrees_with_record
+        if got is not want:
+            print('  [FAIL] %s: agrees=%r, expected %r  (%s)' % (lbl, got, want, why))
+            ok = False
+
+    # 5. a reply that OMITS the field entirely must validate - the prompt no longer asks
+    #    for it, so a compliant model will not send it.
+    no_field = _raw('partial_factual_errors', None)
+    del no_field['rejection_type_agrees_with_record']
+    client.register('omitted', no_field)
+    res = judge_pair(_sample_input('partial_factual_errors'), client, case_label='omitted')
+    if res.status != 'ok':
+        print('  [FAIL] a reply omitting the field was rejected: %s' % res.reason)
+        ok = False
+    elif res.judge_output.rejection_type_agrees_with_record is not True:
+        print('  [FAIL] omitted field was not filled in by the code')
+        ok = False
+
+    # 6. REAL RECORD SHAPES, not only the synthetic sample. Every distinct rejection_type
+    #    present in the adapted delivery is run end to end, so a type whose real records
+    #    differ in shape from _sample_input cannot pass here by construction.
+    real = os.path.join(_HERE, '..', '..', 'data', 'adapted', 'dpo_task2.jsonl')
+    if os.path.exists(real):
+        import json as _json
+        seen = {}
+        with open(real, encoding='utf-8') as fh:
+            for line in fh:
+                r = _json.loads(line)
+                seen.setdefault(r.get('rejection_type'), r)
+        checked = 0
+        for rtype, rec in sorted(seen.items()):
+            if rtype not in CORROBORATING_DIMENSION:
+                print('  [FAIL] real record carries unmapped rejection_type %r' % rtype)
+                ok = False
+                continue
+            ji_real = jcon.JudgeInput(
+                prompt=rec['prompt'], chosen=rec['chosen'], rejected=rec['rejected'],
+                source_chunk_id=rec['source_chunk_id'],
+                source_region=rec['source_region'], rejection_type=rtype,
+                model_version=rec.get('model_version', 'x'),
+                format_type=rec.get('format_type'),
+                source_text=rec['chosen'],
+                deterministic_signals={'detectability':
+                                       cdpo.DETECTABILITY.get(rtype, 'none')})
+            if 'rejection_type_declared' in ji_real.to_prompt_payload():
+                print('  [FAIL] real %r record leaked the declared type' % rtype)
+                ok = False
+            # judge names a DIFFERENT dimension than the record -> must not corroborate
+            other = next(t for t in jcon.REJECTION_TYPES
+                         if CORROBORATING_DIMENSION[t] != CORROBORATING_DIMENSION[rtype])
+            lbl = 'real_%s' % rtype
+            client.register(lbl, dict(_raw(other, True),
+                                      evidence=[{'claim': 'c', 'quote_from': 'chosen',
+                                                 'quote': rec['chosen'][:12],
+                                                 'explains_type': other}]))
+            res = judge_pair(ji_real, client, case_label=lbl)
+            if res.status != 'ok':
+                print('  [FAIL] real %r record did not judge: %s' % (rtype, res.reason))
+                ok = False
+            elif res.judge_output.rejection_type_agrees_with_record is not False:
+                print('  [FAIL] real %r: cross-dimension disagreement read as agreement'
+                      % rtype)
+                ok = False
+            checked += 1
+        # Say what this did NOT cover. The delivery carries only 1 of the 9 charter
+        # types (3,000 partial_factual_errors, the other 8 absent - see
+        # TASK2_INTAKE_FINDINGS.md §3), so real-record coverage is capped by the data,
+        # not by the test. A bare "1" here would read as a thin test rather than a thin
+        # dataset, and the other 8 types are exercised on synthetic input above.
+        uncovered = sorted(set(jcon.REJECTION_TYPES) - set(seen))
+        print('  blind corroboration: %d of %d charter type(s) exercised on REAL records'
+              % (checked, len(jcon.REJECTION_TYPES)))
+        if uncovered:
+            print('     %d type(s) absent from the delivery, synthetic-only here: %s'
+                  % (len(uncovered), ', '.join(uncovered)))
+    else:
+        print('  blind corroboration: SKIPPED real records (data/adapted absent)')
+
+    # 7. REGRESSION - the safety floor is structural and this change must not touch it.
+    if 'AUTO_CONFIRM' in jcon.ASSESSMENTS:
+        print('  [FAIL] a judge can now express AUTO_CONFIRM'); ok = False
+    if not jcon.FORBIDDEN_TOP_LEVEL_FIELDS >= {'verdict', 'AUTO_CONFIRM'}:
+        print('  [FAIL] the forbidden-field guard was weakened'); ok = False
+
+    return ok
 
 
 def run_self_test():
@@ -397,6 +623,13 @@ def run_self_test():
         ok = False
     if 'similarity' not in lowered:
         print('  [FAIL] system prompt missing the similarity-trap warning'); ok = False
+    # the prompt must no longer ask an unanswerable question
+    if 'true | false | null' in SYSTEM_PROMPT.split(
+            'rejection_type_agrees_with_record')[1][:40]:
+        print('  [FAIL] prompt still asks the model to judge record agreement')
+        ok = False
+
+    ok = _self_test_blind_corroboration() and ok
 
     print('passed: %s' % ok)
     return ok

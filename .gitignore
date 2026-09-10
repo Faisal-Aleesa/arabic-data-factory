@@ -230,6 +230,18 @@ archive/dialect_dictionary_apparatus/*
 
 # Dialect-phase chunk output: derived from a source whose rights are not yet cleared
 # (license: unverified_pending_review).
+#
+# THIS PATH MUST NEVER BECOME TRACKED. Git stops applying ignore rules to a path once
+# it is tracked, so a single commit of this filename silently disables the only
+# control holding back 337 dialect chunks - and the licence audit cannot catch it,
+# because the audit compares AGAINST this corpus and cannot flag it as a leak of
+# itself. It happened on 2026-09-09: a teammate ran chunk.py without --out, whose
+# default is exactly this path, and pushed the result. Verified at the time:
+# check-ignore reported NOT IGNORED and `git add -A` would have staged the held
+# corpus. Fixed by renaming that file to data/processed/chunks_combined.jsonl.
+#
+# Per-source outputs belong at data/processed/chunks_<source>.jsonl. The unsuffixed
+# name is the dialect phase's, and it is load-bearing for containment.
 data/processed/chunks.jsonl
 
 # Local-only EDA build that reproduces source excerpts (see eda.py --no-examples)
@@ -293,3 +305,27 @@ tests/fixtures/*saudi_dialect*
 # ABOUT the corpus, not verbatim source text, so it passes an audit built to find
 # quoted Arabic. One bracket pattern covers every spelling.
 docs/*[Hh][Aa][Nn][Dd][Oo][Ff][Ff]*.md
+
+# Adapter output: locked-schema records rebuilt from Task 2's generated files by
+# src/verification/adapt_task2.py. Regenerable in one command, so committing it would
+# only create a copy that can drift from its source. Classical-derived, so there is no
+# rights question here - this is a staleness rule, not a containment one.
+#
+# NOTE: if the adapter is ever run over DIALECT records, its output inherits the
+# rights-pending status of the corpus and this rule is then load-bearing for
+# containment as well.
+data/adapted/
+
+# THE SAME CONDITIONAL APPLIES TO THE GROUP D REPORTS, and is written here because the
+# files are TRACKED and therefore easy to forget about:
+#   data/processed/duplication_report.json
+#   data/processed/leakage_report.json
+# check_duplication.py embeds up to 120 characters of record text per finding so that a
+# reviewer can judge a flagged duplicate without opening the data. Today every adapted
+# record is classical-derived (asas_albalagha, CC BY-SA) and Task 2's generated files are
+# themselves tracked, so those excerpts add no exposure and the audit passes them clean.
+# If either checker is ever run over DIALECT-derived records, its report inherits the
+# rights-pending status of that corpus and MUST be moved behind an ignore rule in the
+# same change - a tracked path is exactly how the chunks.jsonl regression happened.
+# The licence audit is the backstop: it reads the staged report and refuses HELD_ONLY
+# text. Do not rely on it alone.

@@ -64,5 +64,6 @@
       "tokens": 18079
     }
   ],
-  "output": "data/processed/chunks.jsonl"
+  "output": "data/processed/chunks.jsonl",
+  "_restored_note": "RESTORED 2026-09-09 from a1e3f7a^ (last correct version, commit 941aa4e 2026-08-29). Commit a1e3f7a overwrote this file with an unscoped 2-document run, deleting the saudi_dialect chunking provenance: corpus saudi_dialect->null, documents 5->2, chunks 337->400, and the below_target_min flag count. That report also described a 400-chunk combined output that no longer exists, since it was later split. The asas_albalagha and najdi_popular runs it did carry are preserved in the two chunking_report_<corpus>.json files beside this one. chunk.py has a --report flag; per-corpus report paths avoid this collision entirely."
 }

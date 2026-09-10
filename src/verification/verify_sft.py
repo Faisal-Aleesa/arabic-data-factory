@@ -293,7 +293,7 @@ def combine(fact_verdict, sim_band, similarity_available, contradicted_types=())
 
 # --------------------------------------------------------------- per-response check
 
-def verify_response(response, source_chunk_id, ctx):
+def verify_response(response, source_chunk_id, ctx, instruction=None):
     """Verify ONE response against ONE chunk. The DPO-reusable unit.
 
     Deliberately knows nothing about SFT records: give it a string and a chunk id.
@@ -302,8 +302,12 @@ def verify_response(response, source_chunk_id, ctx):
     # unsupported addition: a token added to a known fact is only a legitimate extension
     # if the source actually contains it.
     chunk_rec = ctx.chunks.get(source_chunk_id)
+    # `instruction` is optional and defaults to None so every existing caller - the DPO
+    # path included - keeps working unchanged. When it IS supplied, check_facts can
+    # also read the quoted item out of the question, which is where 98% of them live.
     facts = cf.check_response(response, source_chunk_id, ctx.facts, ctx.corpus,
-                              chunk_text=chunk_rec.get('chunk_text') if chunk_rec else None)
+                              chunk_text=chunk_rec.get('chunk_text') if chunk_rec else None,
+                              instruction=instruction)
     sim = ctx.similarity(response, source_chunk_id)
     pct = sim['percentile'] if sim else None
     band = ctx.bands.band(pct)
@@ -333,7 +337,8 @@ def verify_sft_record(record, ctx):
         return {'verdict': INVALID_RECORD, 'leaning': None,
                 'reason': 'missing required field(s): %s' % ', '.join(missing),
                 'source_chunk_id': record.get('source_chunk_id')}
-    out = verify_response(record['response'], record['source_chunk_id'], ctx)
+    out = verify_response(record['response'], record['source_chunk_id'], ctx,
+                          instruction=record.get('instruction'))
     out['model_version'] = record.get('model_version')
     out['format_type'] = record.get('format_type')
     # فحص مطابقة الشكل عبر check_format، مع تسجيل السبب لا النتيجة وحدها.

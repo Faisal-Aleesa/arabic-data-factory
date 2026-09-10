@@ -126,16 +126,38 @@ Wire it only after real judge output has been scored against
 
 **سياسة مُبرمجة جزئيًا: الجدول مُنفّذ ومُختبر، لكنه غير موصول بمسار القبول بعد.**
 
-**Known limitation in the integrated judge (2026-09-05).** The DPO judge in `src/dpo/`
-is told the record's declared `rejection_type` before being asked whether it agrees
-(`rejection_type_declared` in the prompt payload). That is a leading question, so
-`rejection_type_agrees_with_record: true` means "not contradicted", NOT independent
-confirmation. It does not threaten the AUTO_CONFIRM floor - that is structural, since
-the judge's vocabulary has no such value and `_maybe_escalate()` cannot return one - but
-it does mean escalation may **under-detect genuine mislabels**, silently, because the
-judge has been primed toward agreement. Follow-up, not a blocker: withhold the declared
-type and compare in code, as `src/verification/judge_dpo.py` does. Full reasoning in
-`src/dpo/judge_contract.py`.
+**Type-priming in the integrated judge: FIXED 2026-09-09.** Recorded here as resolved
+rather than deleted, because the reasoning is what makes the current design legible.
+
+*What was wrong.* The DPO judge in `src/dpo/` was told the record's declared
+`rejection_type` before being asked whether it agreed (`rejection_type_declared` in the
+prompt payload). That is a leading question, so `rejection_type_agrees_with_record: true`
+meant "not contradicted", not independent confirmation, and escalation could
+**under-detect genuine mislabels** silently: a pair whose label was simply wrong was one
+the judge had been primed to accept.
+
+*What changed.* `JudgeInput.to_prompt_payload()` no longer sends the declared type, and
+the system prompt instructs the model to return `rejection_type_agrees_with_record` as
+null because it cannot know the answer. The judge names the weakness it actually
+observes, and `llm_judge._corroborate()` compares that against the record **in code**
+using `check_dpo.CORROBORATING_DIMENSION` - the mechanism `src/verification/judge_dpo.py`
+has always used, now ported to the shipping path with the table moved into `check_dpo.py`
+so there is one definition. Comparison is on the DIMENSION each type implies rather than
+on the type name, because the mapping is many-to-one on purpose: `verbosity` and
+`weak_organization` both resolve to `style`, so a judge naming one where the record says
+the other has found the same defect rather than contradicted the record.
+
+*What did not change, and never depended on this.* The AUTO_CONFIRM floor is structural:
+the judge's vocabulary has no such value and `_maybe_escalate()` cannot return one. That
+held before the fix and holds after it. What improves is escalation QUALITY - a mislabel
+now has to survive a judge that was never told what to say.
+
+*What is still not established.* No real model has run through this path. The mechanism
+is pinned by self-tests against scripted backends, and the real-record leg exercises only
+**1 of the 9 charter types**, because the current delivery contains only
+`partial_factual_errors` (`docs/TASK2_INTAKE_FINDINGS.md` §3). Blind corroboration being
+wired correctly is not evidence that a real judge names Arabic weaknesses well. Full
+reasoning in `src/dpo/judge_contract.py`.
 
 One asymmetry the DPO side adds deliberately: `NEEDS_JUDGE` is `check_dpo.py`
 *delegating* the decision, so a judge PASS there CONFIRMS the pair. A rule-based

@@ -251,8 +251,13 @@ class RecordedJudgeClient(BaseJudgeClient):
 
     Lookup key defaults to the case `label` if the caller includes one in the payload
     under `_case_label` (llm_judge.py's test harness sets this); otherwise falls back to
-    a hash of (chosen, rejected, rejection_type_declared), which is stable enough for
-    fixed test fixtures without needing exact byte-for-byte payload equality.
+    a hash of (chosen, rejected), which is stable enough for fixed test fixtures without
+    needing exact byte-for-byte payload equality.
+
+    `rejection_type_declared` used to be part of that fallback key. It was removed from
+    the payload entirely when the judge stopped being told the declared type, so it is no
+    longer available to key on - and it never needed to be: chosen+rejected already
+    identify a pair. This is a test-fixture lookup, not a production cache.
     """
 
     def __init__(self, recordings: Optional[Dict[str, Any]] = None,
@@ -266,9 +271,8 @@ class RecordedJudgeClient(BaseJudgeClient):
     def fingerprint(user_payload: Dict[str, Any]) -> str:
         if '_case_label' in user_payload:
             return user_payload['_case_label']
-        return '%s|%s|%s' % (user_payload.get('rejection_type_declared'),
-                             hash(user_payload.get('chosen')),
-                             hash(user_payload.get('rejected')))
+        return '%s|%s' % (hash(user_payload.get('chosen')),
+                          hash(user_payload.get('rejected')))
 
     def register(self, label: str, response: Any) -> None:
         self.recordings[label] = response

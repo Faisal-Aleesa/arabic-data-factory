@@ -70,23 +70,24 @@ only via `judge_suite.py --dpo-path legacy`. That makes it unreferenced by the l
 which is exactly the condition under which code quietly rots - so its remaining job is
 written down here rather than left to be rediscovered.
 
-**It is the reference implementation for the type-priming fix.** The merged judge is told
-the record's `rejection_type` before being asked whether it agrees
-(`judge_contract.JudgeInput.to_prompt_payload` -> `rejection_type_declared`). That is a
-leading question: agreement means "not contradicted", not independent confirmation, and
-escalation can therefore under-detect a genuine mislabel. See the KNOWN LIMITATION
-section in `src/dpo/judge_contract.py`.
+**It WAS the reference implementation for the type-priming fix, and that fix has now
+landed (2026-09-09).** The merged judge no longer receives the declared type:
+`judge_contract.JudgeInput.to_prompt_payload()` withholds it, and
+`llm_judge._corroborate()` compares the judge's own named weakness against the record in
+code. `CORROBORATING_DIMENSION` moved to `check_dpo.py` so both judges import one
+definition; this module re-exports it under the original name.
 
-**What the follow-up needs to port from here: `CORROBORATING_DIMENSION`.** This module
-never passes the declared type to the model. It asks for a blind score on all eight
-charter dimensions, then maps rejection_type -> the dimension that should have separated
-the pair and checks THAT. Corroboration becomes a fact about the judge's own independent
-scoring instead of about the hint it was given. `judge_dpo_pair()` shows the whole
-arrangement end to end, and `run_self_test()` pins it.
+So BOTH things this module was kept to donate are now ported, and neither should be
+ported again: the position-bias swap check lives in `llm_judge.judge_pair()`, and blind
+corroboration lives in `llm_judge._corroborate()`. Both derive their vocabulary from
+`check_dpo` rather than restating it.
 
-Already ported, so do NOT port it twice: the position-bias swap check now lives in
-`llm_judge.judge_pair()`, deriving its type set from `check_dpo.DETECTABILITY` the same
-way `NO_AUTOMATED_COVERAGE` does here.
+**What is still only here.** The eight-DIMENSION scoring prompt. The merged judge scores
+in the nine-TYPE vocabulary instead, which is why the port compares dimensions derived
+from types rather than scoring dimensions directly. If a future judge ever needs
+per-dimension scores from the model, this module is where that prompt and its parser
+already exist - that, plus being an independent second implementation of the same
+contract, is the remaining reason not to delete it.
 
 هذه الوحدة ليست الحَكَم المستخدم في الإنتاج، وتُحفظ مرجعًا لإصلاح تحيّز النوع المُعلن.
 """
@@ -123,17 +124,11 @@ REQUIRED_KEYS = ('dimensions', 'overall', 'confidence')
 
 # Which dimension SHOULD separate the pair if the declared rejection_type is honest.
 # Single source of truth for the type vocabulary: check_dpo.REJECTION_TYPES.
-CORROBORATING_DIMENSION = {
-    'poor_instruction_following': 'instruction_following',
-    'wrong_formatting': 'format',
-    'missing_information': 'completeness',
-    'unsupported_additions': 'grounding',
-    'wrong_register': 'arabic_quality',
-    'verbosity': 'style',
-    'weak_organization': 'style',
-    'partial_factual_errors': 'factual_consistency',
-    'less_faithful_reconstruction': 'grounding',
-}
+# MOVED to check_dpo.py so the merged judge (src/dpo/llm_judge.py) can import the same
+# definition instead of copying it. Re-exported under the original name because
+# judge_suite.py and this module's own self-test refer to it as
+# judge_dpo.CORROBORATING_DIMENSION.
+CORROBORATING_DIMENSION = cd.CORROBORATING_DIMENSION
 
 # The types with no deterministic check anywhere. Judged twice, positions swapped.
 NO_AUTOMATED_COVERAGE = frozenset(

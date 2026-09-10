@@ -26,43 +26,49 @@ exactly the keys check_pair() already returns; nothing here invents a field that
 already produced by the existing deterministic layer. `dataset_stated_rejection_type` is
 NOT used anywhere - the field is `rejection_type`, matching check_dpo.DPO_FIELDS.
 
-KNOWN LIMITATION: `rejection_type_declared` is a leading question
------------------------------------------------------------------
-`JudgeInput.to_prompt_payload()` sends `rejection_type_declared`, and JudgeOutput asks
-the model for `rejection_type_agrees_with_record`. So the Judge is told the answer the
-record expects before it is asked whether that answer is right.
+RESOLVED 2026-09-09: the judge is no longer told the declared rejection_type
+--------------------------------------------------------------------------
+This was a KNOWN LIMITATION and is kept as history, because the shape of the mistake is
+worth recognising again.
 
-**Agreement therefore corroborates less than it appears to.** A model that agrees may be
-confirming the label rather than reading the pair - the two are indistinguishable from
-the output. `rejection_type_agrees_with_record: true` should be read as "not contradicted"
-rather than as independent confirmation, and it must not be treated as a second opinion
-in any future weighting.
+The problem. `JudgeInput.to_prompt_payload()` used to send `rejection_type_declared`, and
+JudgeOutput asked the model for `rejection_type_agrees_with_record`. The Judge was told
+the answer the record expected before being asked whether that answer was right, so
+agreement corroborated the label rather than the pair - the two were indistinguishable
+from the output. It cost escalation QUALITY: a pair whose `rejection_type` was simply
+wrong was one the judge had been primed to accept, and the failure was silent.
 
-قيد معروف: إبلاغ الحَكَم بالنوع المُعلن سؤال موجِّه، فالموافقة تُقرأ على أنها "لم
-يُخالَف"، لا على أنها تأكيد مستقل.
+The fix. `to_prompt_payload()` no longer carries the type. The prompt tells the model to
+send `rejection_type_agrees_with_record` as null, since it cannot know it, and to name in
+`rejection_type` the weakness it actually observes. `llm_judge._judge_once()` then
+overwrites the field with `_corroborate()`, which compares the two through
+`check_dpo.CORROBORATING_DIMENSION`. Corroboration is now a fact about the judge's own
+independent output.
 
-What this does NOT threaten
-    The AUTO_CONFIRM safety floor is unaffected, and not because of anything here:
-    ASSESSMENTS has no AUTO_CONFIRM value for a judge to set, and
-    judge_pipeline._maybe_escalate() can only return NEEDS_JUDGE or FLAG_SUSPICIOUS.
-    That floor is structural and holds however biased the judge is.
+Two details worth keeping straight:
+  * The comparison is by DIMENSION, not by type string. The mapping is many-to-one on
+    purpose - verbosity/weak_organization both mean `style`, and
+    unsupported_additions/less_faithful_reconstruction both mean `grounding` - so a judge
+    that names the sibling type has agreed, not contradicted. Exact matching would
+    escalate correct pairs.
+  * `rejection_type_agrees_with_record` is no longer in REQUIRED_TOP_LEVEL_FIELDS. A
+    compliant model omits it or sends null; a fixture may still send a value; either way
+    the code discards it. Do not restore it to the required list.
 
-What it DOES cost
-    Escalation may UNDER-detect genuine mislabels. A pair whose `rejection_type` is
-    simply wrong is one the judge has been primed to accept, so the disagreement that
-    would have escalated it to FLAG_SUSPICIOUS is less likely to occur. The failure is
-    silent: it looks like agreement, and nothing downstream re-checks the label.
+قيد سابق، عولج: لم يعد الحَكَم يُبلَّغ بالنوع المُعلن، بل يسمّي العيب الذي يراه ثم
+يقارن الكود بينهما على مستوى البُعد لا الاسم.
 
-FOLLOW-UP, not a blocker for this merge
-    Switch to independent detection: withhold `rejection_type_declared` from the payload,
-    have the model name the weakness it actually observes, and let the CODE compare that
-    against the record. That is the approach `src/verification/judge_dpo.py` took - it
-    never passes the declared type and maps type -> dimension in
-    `CORROBORATING_DIMENSION` instead, so corroboration is a fact about the judge's own
-    independent scoring rather than about the hint it was given. The same discipline is
-    already applied here for position: `llm_judge._blank_signals()` withholds the
-    side-labelled deterministic signals precisely so the swap check cannot be gamed by a
-    model reading which side is which.
+What this never threatened
+    The AUTO_CONFIRM safety floor, before or after. ASSESSMENTS has no AUTO_CONFIRM value
+    for a judge to set, and judge_pipeline._maybe_escalate() can only return NEEDS_JUDGE
+    or FLAG_SUSPICIOUS. That floor is structural and holds however biased the judge is.
+
+Still open
+    No real model has run through this path, and the real-record leg of the self-test
+    covers only 1 of the 9 charter types because the current delivery contains only
+    `partial_factual_errors`. The mechanism is wired and pinned; its behaviour with a
+    real judge is unmeasured.
+
 
 Why literal-quote verification matters
 ---------------------------------------
@@ -111,9 +117,16 @@ FORBIDDEN_TOP_LEVEL_FIELDS = frozenset([
 
 REQUIRED_TOP_LEVEL_FIELDS = (
     'schema_version', 'judge_model_version', 'assessment', 'weakness_present',
-    'rejection_type', 'rejection_type_agrees_with_record', 'type_scores',
+    'rejection_type', 'type_scores',
     'confidence', 'evidence',
 )
+
+# `rejection_type_agrees_with_record` is deliberately NOT required. The model is no longer
+# shown the record's type, so it cannot answer, and the system prompt tells it to send
+# null. The field stays accepted-if-present - validated below, discarded either way -
+# so a recorded fixture or an older reply does not fail validation over a value that
+# llm_judge._judge_once() overwrites with a comparison made in code. Requiring it would
+# mean rejecting replies that correctly followed the prompt.
 
 
 # --------------------------------------------------------------------------- JudgeInput
@@ -156,14 +169,23 @@ class JudgeInput:
         return errors
 
     def to_prompt_payload(self) -> Dict[str, Any]:
-        """The exact, minimal dict handed to the model. No extra fields, no answer key."""
+        """The exact, minimal dict handed to the model. No extra fields, no answer key.
+
+        `rejection_type` IS DELIBERATELY ABSENT. It used to be sent as
+        `rejection_type_declared`, which told the model the answer the record expected
+        before asking whether that answer was right - a leading question whose agreement
+        corroborated the label rather than the pair. The judge now assesses blind and
+        names the weakness it actually observes; `llm_judge._corroborate()` compares that
+        against the record afterwards, in code. Do not add the field back: `self.rejection_type`
+        stays on the dataclass because the pipeline needs it, and only this method's
+        output reaches the model.
+        """
         return {
             'prompt': self.prompt,
             'chosen': self.chosen,
             'rejected': self.rejected,
             'source_chunk_id': self.source_chunk_id,
             'source_region': self.source_region,
-            'rejection_type_declared': self.rejection_type,
             'format_type': self.format_type,
             'source_text': self.source_text,
             'deterministic_signals': self.deterministic_signals,
@@ -259,7 +281,7 @@ def validate_judge_output(raw: Any, judge_input: JudgeInput) -> JudgeOutput:
         raise InvalidJudgeOutput('rejection_type %r is not one of the nine charter '
                                  'types or null' % rtype)
 
-    agrees = raw['rejection_type_agrees_with_record']
+    agrees = raw.get('rejection_type_agrees_with_record')
     if agrees is not None and not isinstance(agrees, bool):
         raise InvalidJudgeOutput('rejection_type_agrees_with_record must be a bool or '
                                  'null')

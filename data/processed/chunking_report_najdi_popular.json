@@ -1,0 +1,31 @@
+{
+  "config": {
+    "target_min_tokens": 200,
+    "target_max_tokens": 800,
+    "token_count_method": "whitespace_word_count (word-based approximation)",
+    "corpus": "najdi_popular",
+    "source_format": "dictionary",
+    "boundary_rule": "whole units only, as segmented by Stage 1's --format",
+    "oversize_policy": "kept whole and flagged, never split mid-unit",
+    "poem_boundary_rule": "n/a",
+    "text_variant": "original"
+  },
+  "documents_skipped": [],
+  "chunk_flag_counts": {},
+  "output": "data/processed/chunks_najdi_popular.jsonl",
+  "documents_chunked": 1,
+  "total_chunks": 6,
+  "total_tokens": 4190,
+  "per_document": [
+    {
+      "doc_id": "majam_alkalimat_alshaabia_najd",
+      "region": "najdi",
+      "title": "معجم الكلمات الشعبية في نجد",
+      "unit_type": "entry_block",
+      "units": 473,
+      "chunks": 6,
+      "tokens": 4190
+    }
+  ],
+  "_provenance_note": "DERIVED 2026-09-09 by splitting the combined report committed in a1e3f7a, which was produced by a single UNSCOPED chunk.py run over two corpora and written to the shared default path, overwriting the saudi_dialect report. The split is exact - per-document units, chunks and tokens are carried over verbatim and the per-document token counts sum to the combined total. It is NOT a scoped re-run: chunk_flag_counts is inherited from the combined run and was empty there, so a per-corpus flag count has never actually been computed for this corpus. Replace this file with the output of `chunk.py --corpus najdi_popular --report <this path>` when the interim data for it is available. The `output` field is CORRECTED here: the combined run recorded data/processed/chunks.jsonl, which is both wrong for this corpus and the protected rights-pending path - a tracked report must never point a reader there. The najdi chunks live in data/processed/chunks_najdi_popular.jsonl, which is what this run actually contributed after the combined output was split."
+}

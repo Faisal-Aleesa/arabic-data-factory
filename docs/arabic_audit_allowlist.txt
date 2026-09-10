@@ -22,3 +22,221 @@
 
 # Title of the classical work, recorded in docs/license_manifest.csv.
 أساس البلاغة
+
+
+# ---------------------------------------------------------------------------------
+# Task 2 reconstruction output, triaged 2026-09-08.
+#
+# WHY THESE ARE HERE, and why the threshold was NOT lowered instead.
+#
+# Task 2's generated SFT/DPO data (data/generated/**) is derived from `asas_albalagha`
+# ONLY - measured: 394/394 classical chunks, 0/337 dialect chunks - so the generating
+# model never saw the rights-pending dialect corpus and cannot have copied from it.
+#
+# But the generation prompt asks for SAUDI DIALECT phrasing over those classical
+# sources (`dialect: Saudi`, questions like "وش يعني"). So the output collides with the
+# everyday connectives of a Saudi dialect dictionary constantly and by design. Every
+# run below is a generic connective, a lexicographic formula, or a discourse marker.
+#
+# MEASURED at intake: 116 distinct HELD_ONLY runs, longest FOUR words
+# ("لها أكثر من معنى" = "it has more than one meaning", one occurrence in the dialect
+# corpus). Nothing at five words or more matched anywhere. A real leak of dictionary
+# content would show long runs; this shows the opposite shape.
+#
+# These are listed individually ON PURPOSE. Raising --min-words to 5 would have
+# silenced them in one line, and would ALSO have silenced any genuine five-word leak
+# in every future commit, in every file, forever. An allowlist entry suppresses
+# exactly one known-safe string and leaves the detector at full sensitivity for
+# everything else. That difference is the whole reason the allowlist exists.
+#
+# قائمة مُصفّاة يدويًا: عبارات عامة قصيرة، لا محتوى مصدريًا فيها.
+# ---------------------------------------------------------------------------------
+
+# 2-word runs (98).
+، أما
+، بينما
+، فهنا
+، لأن
+، وهي
+أرنبة الأنف
+أشرقت الشمس
+أصل كلمة
+أو لا
+أول الشباب
+أي أذله
+إذا قلنا
+إيش يعني
+البحر يكون
+البيت يقول
+الحديث يقول
+الحديدة المدببة
+الضمير في
+الطريق يكون
+العلاقة بين
+الفرق بين
+اللي هو
+المثل هذا
+بتشديد القاف
+بسبب وجود
+بشيء ما
+بنفس المعنى
+تجاوز الحد
+تجي من
+تختلف عن
+تخلى عن
+تستخدم كلمة
+تصغير لكلمة
+تعني الكثير
+تعني الموت
+تعود عليه
+جاي من
+ذكر النعام
+رحل البعير
+روث البقر
+سليط اللسان
+صفة للأرض
+صفة للشيء
+صوب المطر
+طاق واحد
+طرف العين
+على اسمها
+على مهلك
+عندما يقال
+فإذا قال
+فإذا قالوا
+في الحجاز
+في الخشب
+في اللغة،
+في النخلة
+في اليمن
+في جملة
+فيها طلب
+قبل شوي
+قعر البئر
+كأنك تقول
+كلام بطال
+كيف يعمل
+كيف يكون
+لا تستعجل
+لماذا يقال
+ماذا تعني
+مشتقة من
+من الشوائب
+من النص
+من زمان
+مين هي
+نبض العرق
+هذا التعبير
+هذا يعني
+هذه الكلمات
+هنا تعني
+هنا فعل
+هنا من
+هو تشبيه
+هي أمر
+هي عكس
+هي نداء
+وأصل الكلمة
+وسبب التسمية
+وش هي
+وش يسوي
+وهي تعني
+وهي زي
+وهي عكس
+يا سلام
+يبدو أن
+يستخدم في
+يستخدم كلمة
+يعني ركبه
+يعني هنا
+يقولون له
+يكون الرجل
+
+# 3-word runs (17).
+الكلمة مشتقة من
+بفتح القاف و
+تأتي في سياق
+شيء محدد و
+عند وصف شخص
+في الحديث الشريف
+في سياق الحديث
+في سياق الكلام
+في هذا السياق
+لها استخدامات مجازية
+ما أبالي به
+من كل نوع
+من هو الرجل
+نزل من الجبل
+هي مشتقة من
+وأصل الكلمة من
+يقولون عن المرأة
+
+# 4-word runs (1).
+لها أكثر من معنى
+
+# Title of a SECOND Najdi source, added to docs/license_manifest.csv 2026-09-09 as
+# majam_alkalimat_alshaabia_najd. It is flagged HELD_ONLY only because the held dialect
+# dictionary CITES this book nine times - dictionaries of the same dialect reference
+# each other - so the string is bibliographic metadata, not source content.
+#
+# Same precedent as 'أساس البلاغة' above: a work's TITLE has to be writable into the
+# manifest, or the manifest cannot do its job. Measured before allowlisting: only 4 of
+# 437 full glosses (1%) from that source appear verbatim in the held corpus, so the two
+# books are independent works, not copies.
+معجم الكلمات الشعبية في نجد
+
+# ---------------------------------------------------------------------------------
+# Second Najdi source glosses, triaged 2026-09-09.
+#
+# From data/processed/chunks_combined.jsonl (doc_id majam_alkalimat_alshaabia_najd,
+# manifest row majam_alkalimat_alshaabia_najd). Flagged HELD_ONLY because the HELD Najdi
+# dictionary glosses many of the same words - two dictionaries of one dialect define
+# 'a known bird' and 'the palm of the hand' the same way.
+#
+# MEASURED before allowlisting: 303 of 473 headwords (64%) appear in the held corpus,
+# but only 4 of 437 full glosses (1%) match verbatim. High headword overlap with
+# near-zero gloss overlap is the signature of two independent works on one subject,
+# not a copy. Longest run here is four words; nothing at five or more matched.
+#
+# Listed individually, not silenced by raising --min-words - same reasoning as the
+# Task 2 block above.
+#
+# عبارات تعريفية قصيرة يشترك فيها معجمان للهجة واحدة، لا نقل بينهما.
+# ---------------------------------------------------------------------------------
+باطن الكف
+طائر معروف
+غافل وخامل
+للكلب لطرده
+لم أستطع
+الثور أو البقرة
+قطعة من العجين
+نداء من الزوج لزوجته
+
+# ---------------------------------------------------------------------------------
+# Colloquial DEFINITIONAL CONNECTIVES, from check_facts.SELF_QUOTE_CONNECTIVES
+# (added 2026-09-09).
+#
+# These are the self-quoting refinement's feature vocabulary, not source content. The
+# rule works by finding where a model stops asserting what the source says and starts
+# glossing in its own words, and these are the markers of that boundary. They cannot be
+# paraphrased away the way ordinary prose can: the module has to contain the literal
+# strings in order to search for them.
+#
+# TRIAGE, measured against the held corpus before allowlisting:
+#     زي ما      3 occurrences     "like what / as"
+#     زي اللي    5 occurrences     "like the one who"
+#     كأنه يقول  2 occurrences     "as if he says"
+# All three are function-word sequences of general Saudi colloquial Arabic, carrying no
+# lexicographic content: they are in the held corpus for the same reason "in the" is in
+# every English book. The other 16 connectives in that tuple did not flag at all.
+#
+# Two of the six strings this block was first written for were NOT allowlisted, because
+# they were avoidable prose of ours rather than feature vocabulary: a self-test probe and
+# a comment quoting a response shape. Both were rewritten instead. Allowlisting is for
+# strings the code must literally contain.
+#
+# أدوات تفسير عامية عامة، لا محتوى معجميًا فيها؛ الوحدة تحتاجها نصًّا كي تبحث عنها.
+# ---------------------------------------------------------------------------------
+زي ما
+زي اللي
+كأنه يقول

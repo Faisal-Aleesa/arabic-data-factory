@@ -207,7 +207,26 @@ def build_report(chunks: list[dict], cleaning: dict, dedup: dict, chunking: dict
 
     A(f"# EDA Report - {corpus_title(chunks, corpus_name)}")
     A("")
-    A(f"- **Source corpus:** {chunks[0]['source']} | **License:** {chunks[0]['license']}")
+    # Every distinct (source, license) pair, not chunks[0]'s.
+    #
+    # This line used to read the first chunk and apply its licence to the whole report.
+    # On a single-corpus run that is right by accident; on a run spanning two sources it
+    # is a LICENCE MISLABEL in a tracked file. It produced exactly that: a report
+    # covering asas_albalagha (CC BY-SA 4.0) and a permission_granted dialect source was
+    # headed "Arabic Wikisource | License: CC BY-SA 4.0", asserting a share-alike licence
+    # over material whose permission does not establish redistribution at all.
+    #
+    # Sorted so the output is stable, and every pair is listed rather than summarised -
+    # a reader checking what they may redistribute needs all of them, and a run that
+    # spans licences should look unusual on the page.
+    pairs = sorted({(c.get("source", "?"), c.get("license", "?")) for c in chunks})
+    if len(pairs) == 1:
+        A(f"- **Source corpus:** {pairs[0][0]} | **License:** {pairs[0][1]}")
+    else:
+        A(f"- **Source corpora:** {len(pairs)} distinct source/licence pairs in this run "
+          f"- this report spans more than one licence:")
+        for src, lic in pairs:
+            A(f"    - {src} | **License:** {lic}")
     A(f"- **Documents in:** {chunking.get('documents_chunked', '?')}")
     A(f"- **Source format:** `{chunking.get('config', {}).get('source_format', 'prose')}` "
       f"(explicit per batch; clean.py and chunk.py must agree)")

@@ -2,9 +2,15 @@
 
 **سياسة تقسيم البيانات: التقسيم بالوثيقة الأم، لا بالقطعة.**
 
-Written before the checker that enforces it. No leakage-checking module exists yet — when
-one is built, it implements this and this file moves next to it or is superseded by its
-docstring.
+**Status, updated 2026-09-09: the checker now exists.**
+`src/verification/check_leakage.py` implements this policy. This file remains the
+rationale — the checker's docstring points here rather than restating the argument.
+
+Two things this document asserted needed correcting: the corpus now has **seven**
+documents, not six (§"The consequence"), and the manifest/corpus `doc_id` sets had
+drifted apart (§"Related"). The checker found the second on its first live run; it was
+repaired the same day by renaming the manifest row, and both are recorded rather than
+edited away.
 
 ---
 
@@ -14,7 +20,8 @@ docstring.
 >
 > No single document's derived SFT/DPO records may appear in more than one partition.
 
-For this purpose the corpus has **six documents**. The five dialect regions are distinct
+For this purpose the corpus has **seven documents** (six when this was written; the Najdi
+popular-words corpus was added 2026-09-09). The five dialect regions are distinct
 documents even though they come from one physical book, and `asas_albalagha` is one
 document even though it was ingested from 18 EPUB parts.
 
@@ -65,7 +72,13 @@ be split across partitions, and `chosen`/`rejected` must never land in different
 | `dialect_dict_northern` | 49 | 37,574 | 7% |
 | `dialect_dict_eastern` | 30 | 22,007 | 4% |
 | `dialect_dict_western` | 25 | 18,079 | 3% |
-| **total** | **731** | **538,302** | |
+| `majam_alkalimat_alshaabia_najd` | 6 | — | <1% |
+| **total** | **737** | **538,302+** | |
+
+The seventh document adds 6 chunks and does not change any conclusion below — it is far
+too small to be a partition and makes the imbalance slightly worse, not better. Its token
+count is not filled in because the EDA that produced this column has not been re-run
+across it.
 
 This policy is correct for leakage, and it has a real cost that should be decided
 deliberately rather than discovered during training:
@@ -97,7 +110,11 @@ proportions. That trades a visible constraint for an invisible leak.
 
 ## What the future checker must verify
 
-When the leakage checker is built, at minimum:
+**BUILT.** `src/verification/check_leakage.py`, all five implemented, each with a
+discrimination self-test. Codes: `UNPARSEABLE_CHUNK_ID`, `UNKNOWN_DOC_ID`,
+`DOC_IN_MULTIPLE_PARTITIONS`, `PAIR_SPLIT`, `TEXT_CROSSES_PARTITIONS`.
+
+At minimum it verifies:
 
 - every record's `source_chunk_id` parses to a known `doc_id` — **fail loudly** on one
   that does not, rather than treating it as its own document
@@ -116,8 +133,34 @@ When the leakage checker is built, at minimum:
 - `src/verification/validate_release.py` — last-mile form validation on release files
 - `src/data_engineering/dedup.py` — existing SHA-256 + MinHash/LSH duplicate detection
 - `docs/license_manifest.csv` — the `doc_id` vocabulary this policy splits on.
-  **Verified:** the manifest's six `doc_id` values and the six appearing in the
-  corpora are the same set, so the split unit and the licence-tracking unit are
-  identical. A new source adds a manifest row first (README, "Adding a New
-  Source"), which means it becomes a split unit at the same moment it becomes a
-  licence-tracked one.
+  **Verified, and re-verified after a break and a repair on 2026-09-09:** the manifest's
+  **seven** `doc_id` values and the seven appearing in the corpora are the same set, so
+  the split unit and the licence-tracking unit are identical.
+
+  **This invariant broke once and was repaired; the history is kept because the repair
+  is the interesting part.** The Najdi popular-words row was first written as
+  `dialect_dict_najdi_popular`, matching the naming convention of the five
+  `dialect_dict_*` rows, while its chunks carried `majam_alkalimat_alshaabia_najd`.
+  `check_leakage.py` reported all 6 chunks as `UNKNOWN_DOC_ID` on its first live run
+  against real ids — which is what the checker is for.
+
+  **Fixed by changing the MANIFEST to follow the data**, not the other way round. The two
+  options were not equivalent:
+  1. rename the manifest `doc_id` — edits a licence-tracking record, but the value was
+     verified to be referenced nowhere except that row and prose comments, never in a
+     lookup;
+  2. re-emit the chunks as `dialect_dict_najdi_popular` — cosmetically tidier, but the
+     chunks are already committed and pushed, so every derived id would change under
+     anything already referencing them.
+
+  (1) was chosen because it moves a string nothing depends on, rather than rewriting ids
+  that are already public. The cost is that this one row does not match the
+  `dialect_dict_*` naming convention of the other dialect sources. That is deliberate:
+  **the convention is cosmetic and the invariant is load-bearing.** The row's
+  `license_note` records the rename.
+
+  The general rule still holds and is the intent: a new source adds a manifest row first
+  (README, "Adding a New Source"), so it becomes a split unit at the same moment it
+  becomes a licence-tracked one. This document is the case where that did not happen —
+  the data was pushed before the row existed — and the mismatch is what that inversion
+  cost.

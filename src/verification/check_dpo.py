@@ -249,6 +249,46 @@ DETECTABILITY = {
     'weak_organization': 'none',
 }
 
+# Which QUALITY DIMENSION a declared rejection_type should have separated the pair on.
+#
+# Lives here, beside DETECTABILITY, because it is part of the shared rejection-type
+# vocabulary rather than any one judge's internals - both judge implementations import
+# it from here, so there is exactly one definition. It was originally written in
+# src/verification/judge_dpo.py and moved when src/dpo/llm_judge.py needed it too.
+#
+# WHY A JUDGE NEEDS THIS AT ALL. A judge must never be told the declared rejection_type
+# before it scores: "this pair is supposed to differ in register, which is better?" is a
+# leading question, and agreement with it corroborates nothing beyond the model's ability
+# to follow an instruction. So the judge assesses blind, and the CODE maps the declared
+# type onto what should have separated the pair and checks that. Corroboration becomes a
+# fact about the judge's own independent output rather than about the hint it was given.
+#
+# THE MAPPING IS MANY-TO-ONE ON PURPOSE, and that is what makes it more useful than
+# comparing type strings. Two pairs of types are genuinely hard to tell apart:
+#
+#   verbosity            + weak_organization           -> style
+#   unsupported_additions + less_faithful_reconstruction -> grounding
+#
+# A judge that reads a padded, badly-ordered answer and calls it `weak_organization`
+# where the record says `verbosity` has not contradicted the record - it has landed on
+# the same underlying defect. Exact string comparison would score that as a mislabel and
+# escalate a correct pair. Dimension comparison treats it as corroboration, and reserves
+# disagreement for cases where the judge points at a different KIND of defect.
+#
+# أي بُعد جودة كان ينبغي أن يفرّق الزوج، حسب النوع المُعلن. التطابق على مستوى البُعد لا
+# على مستوى الاسم، لأن بعض الأنواع تشترك في العيب نفسه.
+CORROBORATING_DIMENSION = {
+    'poor_instruction_following': 'instruction_following',
+    'wrong_formatting': 'format',
+    'missing_information': 'completeness',
+    'unsupported_additions': 'grounding',
+    'wrong_register': 'arabic_quality',
+    'verbosity': 'style',
+    'weak_organization': 'style',
+    'partial_factual_errors': 'factual_consistency',
+    'less_faithful_reconstruction': 'grounding',
+}
+
 
 # ------------------------------------------------------------------ format hook (gap)
 
