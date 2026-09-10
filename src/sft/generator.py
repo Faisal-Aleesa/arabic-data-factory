@@ -46,6 +46,34 @@ META_THINKING_MARKERS = (
 )
 
 
+def extract_answer_without_scaffold(text: str) -> str:
+    """
+    Extract answer without thinking scaffold.
+    Handles both formats:
+    - "Thinking: ... Answer: ..." → returns just the answer part
+    - "Answer: ..." → returns text after "Answer: " header
+    - Plain text → returns as-is
+    """
+    if not text:
+        return ""
+
+    text = text.strip()
+
+    # Check for "Answer:" header (both at start and mid-text)
+    if "Answer:" in text:
+        # Find where "Answer:" appears
+        idx = text.find("Answer:")
+        # Extract everything after "Answer:" and optional newline
+        answer = text[idx + 7:].strip()
+        # Remove "Thinking:" section if it comes before
+        if answer.startswith("\n"):
+            answer = answer[1:].strip()
+        return answer
+
+    # No scaffold found, return as-is
+    return text
+
+
 class OpenRouterClient:
     """Client for OpenRouter API"""
 
