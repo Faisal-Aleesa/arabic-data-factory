@@ -345,6 +345,54 @@ machine that does have the corpus, exit 1 bites.
 `git commit --no-verify` bypasses the hook. Don't — the audit exists precisely because
 source passages migrate into code during debugging, and code is not gitignored.
 
+### The secrets scan (same hook, runs before the licence audit)
+
+Added 2026-09-11 after a live API key was committed to `.env.example` and pushed to the
+public remote. Every gate in the hook passed it: the licence audit scans for Arabic source
+text and correctly reported the file as clean, because it was never a secrets scanner.
+`.gitignore` covers `.env` but deliberately not `.env.example` — the example *is* the
+template — so the one file guaranteed to be committed had no protection at all.
+
+`src/verification/audit_staged_secrets.py` now runs on every staged file and refuses:
+
+| what | fires on | pattern |
+|---|---|---|
+| OpenRouter key | any file | `sk-or-v1-` + 40+ alphanumerics |
+| Anthropic key | any file | `sk-ant-` + 20+ |
+| OpenAI-style key | any file | `sk-` + 20+ (only where the two above did not match, so a key is reported once under its real name) |
+| AWS access key id | any file | `AKIA` + 16 uppercase/digits |
+| any high-entropy value | `.env*` files only | a `KEY=value` that is 20+ chars, not placeholder-shaped, has no `/` `:` or spaces, and scores ≥ 3.5 bits/char |
+
+| scanner exit | hook behaviour |
+|---|---|
+| 0 — nothing credential-shaped | commit proceeds |
+| 1 — a key-shaped value is staged | **commit blocked** |
+| 2 — the git index could not be read | **commit blocked** |
+
+Note the last row: unlike the licence audit, the secrets scan's exit 2 **blocks**. The
+licence audit's "no corpus" is the normal state of a fresh clone, where there is nothing
+to leak. There is no innocent version of "could not see the staged files" — a scanner
+that ran on nothing has no basis to call the commit safe.
+
+Placeholders like `your_api_key_here`, `replace_with_your_openrouter_key`, `<your-key>`
+or `CHANGEME` never fire; the self-test pins that. Neither do legitimate config values
+such as model names or URLs. The `.env*` check was designed from measurement rather than
+a guess: on this repo's own values, entropy alone *cannot* separate a placeholder from a
+key — `google/gemini-2.5-flash-lite` scores higher than a raw hex key — so entropy is the
+last gate, after a placeholder-word exemption and a no-`/`-no-`:` structural filter. The
+scanner's docstring has the table.
+
+Findings are reported as file, line, pattern and the value **redacted** to its first 8
+characters — the scanner never reproduces the secret it refuses.
+
+**If the scanner fires on a real key, revoke it at the provider first.** Replacing the
+value in the file is the second step, not the first: a key that reached the public remote
+is compromised whether or not a later commit removes it. Removing it does not un-leak it.
+
+Run it by hand any time: `python src/verification/audit_staged_secrets.py` (staged
+files) or `--files <paths>`; `--self-test` exercises every pattern, every placeholder
+shape, and the scanner reading its own source.
+
 ### Why the licence audit is NOT in CI, and what that leaves open
 
 **The licence audit cannot run in GitHub Actions, or on any remote runner.** This is a

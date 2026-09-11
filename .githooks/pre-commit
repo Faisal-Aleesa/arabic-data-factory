@@ -1,5 +1,5 @@
 #!/bin/sh
-# Pre-commit gate: licence containment audit.
+# Pre-commit gate: symbol check, secrets scan, licence containment audit.
 #
 # Committed to the repo (not .git/hooks/, which does not survive a clone) and activated
 # per-clone with:
@@ -8,11 +8,15 @@
 #
 # See the README's "Before you commit" section.
 #
-# Exit handling, and why exit 2 does not block:
+# Three gates, in order: symbol check, secrets scan, licence audit. Any one blocks.
+#
+# Exit handling for the LICENCE AUDIT, and why its exit 2 does not block:
 #
 #   0  clean                 -> commit proceeds
 #   1  rights-pending text   -> commit BLOCKED
 #   2  no corpus to check    -> WARN, commit proceeds
+#
+# (The secrets scan's exit 2 DOES block - see the comment above its invocation.)
 #
 # Exit 2 means the rights-pending corpus could not be loaded. That is the normal state on
 # a fresh clone: the dialect corpus is gitignored and the held branch is local-only, so a
@@ -53,6 +57,45 @@ if [ -f "$SYMBOLS" ] && [ -d "$ROOT/src/verification" ]; then
         echo " Usually this means an anchored edit silently failed to apply." >&2
         echo " Details:" >&2
         PYTHONIOENCODING=utf-8 "$PY" "$SYMBOLS" --cross-module "$ROOT/src/verification" >&2
+        echo "==================================================================" >&2
+        exit 1
+    fi
+fi
+
+# Secrets scan, before the licence audit. Added 2026-09-11 after a live API key was
+# committed to .env.example and pushed to the public remote; every gate in this hook
+# passed it, because none of them was looking for credentials.
+#
+# This one FAILS CLOSED ON BOTH NON-ZERO EXITS, unlike the licence audit below:
+#
+#   0  nothing credential-shaped   -> continue
+#   1  a key-shaped value staged   -> commit BLOCKED
+#   2  index could not be read     -> commit BLOCKED
+#
+# The licence audit's exit 2 ("no corpus") is the normal state of a fresh clone, where
+# there is nothing to leak. There is no innocent version of "could not see the staged
+# files": a scanner that ran on nothing has no basis to call the commit safe.
+SECRETS="$ROOT/src/verification/audit_staged_secrets.py"
+if [ -f "$SECRETS" ]; then
+    PYTHONIOENCODING=utf-8 "$PY" "$SECRETS"
+    SSTATUS=$?
+    if [ $SSTATUS -ne 0 ]; then
+        echo "" >&2
+        echo "==================================================================" >&2
+        if [ $SSTATUS -eq 1 ]; then
+            echo " COMMIT BLOCKED - something staged looks like a live credential." >&2
+            echo "" >&2
+            echo " Replace it with a placeholder (e.g. your_api_key_here)." >&2
+            echo " If it is a REAL key: revoke it at the provider first. A key that" >&2
+            echo " reaches the public remote is compromised whether or not a later" >&2
+            echo " commit removes it - removing it does not un-leak it." >&2
+        else
+            echo " COMMIT BLOCKED - the secrets scanner could not read the git index," >&2
+            echo " so it checked nothing. That is not a pass. Investigate before" >&2
+            echo " committing." >&2
+        fi
+        echo "" >&2
+        echo " Do not use --no-verify to get past this." >&2
         echo "==================================================================" >&2
         exit 1
     fi
