@@ -221,6 +221,8 @@ data/raw/*
 !data/raw/.gitkeep
 data/interim/*
 !data/interim/.gitkeep
+data/generated/*
+!data/generated/.gitkeep
 venv/
 __pycache__/
 *.pyc
